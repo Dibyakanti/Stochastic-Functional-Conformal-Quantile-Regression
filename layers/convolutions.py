@@ -1,0 +1,314 @@
+# Copyright 2025 The swirl_dynamics Authors.
+# Modification by Dibyakanti Kumar
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Convolution layers."""
+
+from collections.abc import Callable, Sequence
+from typing import Literal
+
+import flax.linen as nn
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+from layers.residual import CombineResidualWithSkip
+from utils.model_utils import default_init
+
+Array = jax.Array
+PrecisionLike = (
+    None
+    | str
+    | jax.lax.Precision
+    | tuple[str, str]
+    | tuple[jax.lax.Precision, jax.lax.Precision]
+)
+
+
+def ConvLayer(
+    features: int,
+    kernel_size: int | Sequence[int],
+    padding: nn.linear.PaddingLike,
+    use_local: bool = False,
+    precision: PrecisionLike = None,
+    dtype: jnp.dtype = jnp.float32,
+    param_dtype: jnp.dtype = jnp.float32,
+    **kwargs,
+) -> nn.Module:
+  """Factory for different types of convolution layers."""
+  if isinstance(padding, str) and padding.lower() in ["lonlat", "latlon"]:
+    if not (isinstance(kernel_size, tuple) and len(kernel_size) == 2):
+      raise ValueError(
+          f"Kernel size {kernel_size} must be a length-2 tuple for convolution"
+          f" type {padding}."
+      )
+    return LatLonConv(
+        features,
+        kernel_size,
+        use_local=use_local,
+        order=padding.lower(),
+        precision=precision,
+        dtype=dtype,
+        param_dtype=param_dtype,
+        **kwargs,
+    )
+  elif use_local:
+    return nn.ConvLocal(
+        features,
+        kernel_size,
+        padding=padding,
+        precision=precision,
+        dtype=dtype,
+        param_dtype=param_dtype,
+        **kwargs,
+    )
+  else:
+    return nn.Conv(
+        features,
+        kernel_size,
+        padding=padding,
+        precision=precision,
+        dtype=dtype,
+        param_dtype=param_dtype,
+        **kwargs,
+    )
+
+
+class LatLonConv(nn.Module):
+  """2D convolutional layer adapted to inputs on a lat-lon grid."""
+
+  features: int
+  kernel_size: tuple[int, int] = (3, 3)
+  order: Literal["latlon", "lonlat"] = "latlon"
+  use_bias: bool = True
+  kernel_init: nn.initializers.Initializer = nn.initializers.variance_scaling(
+      scale=1.0, mode="fan_avg", distribution="uniform"
+  )
+  strides: tuple[int, int] = (1, 1)
+  use_local: bool = False
+  precision: PrecisionLike = None
+  dtype: jnp.dtype = jnp.float32
+  param_dtype: jnp.dtype = jnp.float32
+
+  @nn.compact
+  def __call__(self, inputs: Array) -> Array:
+    """Applies lat-lon convolution.
+
+    Padding is type "edge" in the latitudinal direction and type "circular"
+    in the longitunidal direction.
+
+    Args:
+      inputs: Input data of at least 4 dimensions (*batch, lat, lon, channels)
+        or (*batch, lon, lat, channels). The lat-lon (or lon-lat) axes are
+        assumed at position (-3, -2). Multiple batch axes are supported.
+
+    Returns:
+      The convolved output.
+    """
+    if not (self.kernel_size[0] % 2 == 1 and self.kernel_size[1] % 2 == 1):
+      raise ValueError(f"Current kernel size {self.kernel_size} must be odd.")
+
+    if inputs.ndim < 4:
+      raise ValueError(f"Input must be 4D or higher: {inputs.shape}.")
+
+    if self.order == "latlon":
+      lat_axes, lon_axes = (-3, -2)
+      lat_pad, lon_pad = self.kernel_size[0] // 2, self.kernel_size[1] // 2
+    elif self.order == "lonlat":
+      lon_axes, lat_axes = (-3, -2)
+      lon_pad, lat_pad = self.kernel_size[1] // 2, self.kernel_size[0] // 2
+    else:
+      raise ValueError(
+          f"Unrecognized order {self.order} - 'latlon' or 'lonlat' expected."
+      )
+
+    orig_dtype = inputs.dtype
+    inputs = inputs.astype(self.dtype)
+
+    lon_pads = [(0, 0)] * inputs.ndim
+    lon_pads[lon_axes] = (lon_pad, lon_pad)
+    padded_inputs = jnp.pad(inputs, lon_pads, mode="wrap")
+
+    lat_pads = [(0, 0)] * inputs.ndim
+    lat_pads[lat_axes] = (lat_pad, lat_pad)
+    padded_inputs = jnp.pad(padded_inputs, lat_pads, mode="edge")
+
+    conv_fn = nn.ConvLocal if self.use_local else nn.Conv
+
+    return conv_fn(
+        self.features,
+        kernel_size=self.kernel_size,
+        use_bias=self.use_bias,
+        strides=self.strides,
+        kernel_init=self.kernel_init,
+        padding="VALID",
+        precision=self.precision,
+        dtype=self.dtype,
+        param_dtype=self.param_dtype,
+    )(padded_inputs).astype(orig_dtype)
+
+
+class DownsampleConv(nn.Module):
+  """Downsampling layer through strided convolution."""
+
+  features: int
+  ratios: Sequence[int]
+  use_bias: bool = True
+  kernel_init: nn.initializers.Initializer = nn.initializers.variance_scaling(
+      scale=1.0, mode="fan_avg", distribution="uniform"
+  )
+  precision: PrecisionLike = None
+  dtype: jnp.dtype = jnp.float32
+  param_dtype: jnp.dtype = jnp.float32
+
+  @nn.compact
+  def __call__(self, inputs: Array) -> Array:
+    """Applies strided convolution for downsampling."""
+    if not inputs.ndim > len(self.ratios):
+      raise ValueError(
+          f"Inputs ({inputs.shape}) must have at least 1 more dimension than"
+          f" that of `ratios` ({self.ratios})."
+      )
+
+    batch_ndims = inputs.ndim - len(self.ratios) - 1
+    if not np.all(
+        np.asarray(inputs.shape[batch_ndims:-1]) % np.asarray(self.ratios) == 0
+    ):
+      raise ValueError(
+          f"Input dimensions (spatial) {inputs.shape[batch_ndims:-1]} must"
+          f" divide the downsampling ratio {self.ratios}."
+      )
+
+    return nn.Conv(
+        self.features,
+        kernel_size=self.ratios,
+        use_bias=self.use_bias,
+        strides=self.ratios,
+        kernel_init=self.kernel_init,
+        padding="VALID",
+        precision=self.precision,
+        dtype=self.dtype,
+        param_dtype=self.param_dtype,
+    )(inputs)
+
+class AdaptiveScale(nn.Module):
+  """Adaptively scale the input based on embedding.
+
+  Conditional information is projected to two vectors of length c where c is
+  the number of channels of x, then x is scaled channel-wise by first vector
+  and offset channel-wise by the second vector.
+
+  This method is now standard practice for conditioning with diffusion models,
+  see e.g. https://arxiv.org/abs/2105.05233, and for the
+  more general FiLM technique see https://arxiv.org/abs/1709.07871.
+  """
+
+  act_fun: Callable[[Array], Array] = nn.swish
+  precision: PrecisionLike = None
+  dtype: jnp.dtype = jnp.float32
+  param_dtype: jnp.dtype = jnp.float32
+
+  @nn.compact
+  def __call__(self, x: Array, emb: Array) -> Array:
+    """Adaptive scaling applied to the channel dimension.
+
+    Args:
+      x: Tensor to be rescaled.
+      emb: Embedding values that drives the rescaling.
+
+    Returns:
+      Rescaled tensor plus bias.
+    """
+    assert emb.ndim == 2, (
+        "The dimension of the embedding needs to be two, instead it was : "
+        + str(emb.ndim)
+    )
+    affine = nn.Dense(
+        features=x.shape[-1] * 2,
+        kernel_init=default_init(1.0),
+        precision=self.precision,
+        dtype=self.dtype,
+        param_dtype=self.param_dtype,
+    )
+    scale_params = affine(self.act_fun(emb))
+    # Unsqueeze in the middle to allow broadcasting.
+    scale_params = scale_params.reshape(
+        scale_params.shape[:1] + (x.ndim - 2) * (1,) + scale_params.shape[1:]
+    )
+    scale, bias = jnp.split(scale_params, 2, axis=-1)
+    return x * (scale + 1.0) + bias
+
+class ConvBlock(nn.Module):
+  """A basic two-layer convolution block with adaptive scaling in between.
+
+  main conv path:
+  --> GroupNorm --> Swish --> Conv -->
+      GroupNorm --> FiLM --> Swish --> Dropout --> Conv
+
+  shortcut path:
+  --> Linear
+
+  Attributes:
+    channels: The number of output channels.
+    kernel_sizes: Kernel size for both conv layers.
+    padding: The type of convolution padding to use.
+    dropout: The rate of dropout applied in between the conv layers.
+    film_act_fun: Activation function for the FilM layer.
+  """
+
+  out_channels: int
+  kernel_size: tuple[int, ...]
+  padding: str = "CIRCULAR"
+  dropout: float = 0.0
+  film_act_fun: Callable[[Array], Array] = nn.swish
+  act_fun: Callable[[Array], Array] = nn.swish
+  precision: PrecisionLike = None
+  dtype: jnp.dtype = jnp.float32
+  param_dtype: jnp.dtype = jnp.float32
+
+  @nn.compact
+  def __call__(self, x: Array, emb: Array, is_training: bool) -> Array:
+    h = x
+    h = nn.GroupNorm(min(h.shape[-1] // 4, 32))(h)
+    h = self.act_fun(h)
+    h = ConvLayer(
+        features=self.out_channels,
+        kernel_size=self.kernel_size,
+        padding=self.padding,
+        kernel_init=default_init(1.0),
+        precision=self.precision,
+        dtype=self.dtype,
+        param_dtype=self.param_dtype,
+        name="conv_0",
+    )(h)
+    h = nn.GroupNorm(min(h.shape[-1] // 4, 32))(h)
+    h = AdaptiveScale(act_fun=self.film_act_fun)(h, emb)
+    h = self.act_fun(h)
+    h = nn.Dropout(rate=self.dropout, deterministic=not is_training)(h)
+    h = ConvLayer(
+        features=self.out_channels,
+        kernel_size=self.kernel_size,
+        padding=self.padding,
+        kernel_init=default_init(1.0),
+        precision=self.precision,
+        dtype=self.dtype,
+        param_dtype=self.param_dtype,
+        name="conv_1",
+    )(h)
+    return CombineResidualWithSkip(
+        project_skip=True,
+        dtype=self.dtype,
+        precision=self.precision,
+        param_dtype=self.param_dtype,
+    )(residual=h, skip=x)

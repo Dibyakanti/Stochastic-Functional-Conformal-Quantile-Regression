@@ -1,0 +1,8 @@
+.DS_Store
+
+outputs/*/saved_models/
+outputs/*/train_test/
+outputs/*/actual_predict/
+outputs/*
+outputs/slurm/
+beltrami_experiment/
