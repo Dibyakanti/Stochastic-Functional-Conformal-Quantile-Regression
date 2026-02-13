@@ -94,42 +94,55 @@ def _plot_comparison_grid_3d(preds, truth, times, start_idx, plot_dir):
     plt.savefig(os.path.join(plot_dir, "comparison_3d_volumetric.png"), dpi=200)
     plt.close()
 
-def _vol_plot_comparison_grid_3d(preds, truth, times, start_idx, plot_dir):
+def _vol_plot_comparison_grid_3d(preds, truth, times, start_idx, plot_dir, component_idx=0):
     os.makedirs(plot_dir, exist_ok=True)
+    
+    comp_names = {0: 'u-velocity', 1: 'v-velocity', 2: 'w-velocity', 3: 'pressure'}
+    name = comp_names.get(component_idx, f'channel_{component_idx}')
+    
     step_indices = np.arange(0, len(preds), 20)
     num_cols = len(step_indices)
-    mag_truth = np.sqrt(np.sum(np.square(truth[..., :3]), axis=-1))
-    mag_preds = np.sqrt(np.sum(np.square(preds[..., :3]), axis=-1))
     
-    fig = plt.figure(figsize=(6 * num_cols, 12), facecolor='white')
-    res = mag_truth.shape[1]
+    data_truth = truth[..., component_idx]
+    data_preds = preds[..., component_idx]
+    
+    # 1. Calculate global min/max for a consistent scale
+    vmin = min(data_truth.min(), data_preds.min())
+    vmax = max(data_truth.max(), data_preds.max())
+    
+    fig = plt.figure(figsize=(6 * num_cols, 13), facecolor='white')
+    res = data_truth.shape[1]
     x, y, z = np.mgrid[0:res, 0:res, 0:res]
 
+    img = None # Variable to store the mappable for the colorbar
     for i, step in enumerate(step_indices):
         t_val = times[start_idx + step]
-        for row, (data, label) in enumerate([(mag_truth, "Truth"), (mag_preds, "Pred")]):
+        for row, (data_slice, label) in enumerate([(data_truth, "Truth"), (data_preds, "Pred")]):
             ax = fig.add_subplot(2, num_cols, i + 1 + (row * num_cols), projection='3d')
-            val = data[step]
-            threshold = val.mean() * 0 # Adjusted threshold for visibility at higher res
-            mask = val > threshold
             
-            # Use smaller points (s=1) because high res has many more points
-            ax.scatter(x[mask], y[mask], z[mask], 
+            val = data_slice[step]
+            mask = np.abs(val) > 0 # Adjust threshold as needed
+            
+            # 2. Pass vmin and vmax to keep scales identical
+            img = ax.scatter(x[mask], y[mask], z[mask], 
                              c=val[mask], 
                              cmap='turbo', 
+                             vmin=vmin, 
+                             vmax=vmax,
                              s=6, 
                              alpha=0.4, 
                              edgecolors='none')
             
-            ax.set_title(f"{label} t={t_val:.2f}", fontsize=14)
-            ax.set_axis_off()
-            ax.view_init(elev=25, azim=45)
+            ax.set_title(f"{label} (t={t_val:.2f})")
 
-    plt.tight_layout()
-    save_path = os.path.join(plot_dir, "volumetric_comparison.png")
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    # 3. Add the shared colorbar
+    # pad: distance from plots; shrink: size of bar; aspect: thickness
+    cbar_ax = fig.add_axes([0.15, 0.08, 0.7, 0.02]) # [left, bottom, width, height]
+    fig.colorbar(img, cax=cbar_ax, orientation='horizontal', label=f'{name} Magnitude')
+    
+    plt.savefig(os.path.join(plot_dir, f"{name}_comparison.png"), bbox_inches='tight')
     plt.close()
-
+    
 # --- 3. Main Analysis Execution ---
 def run_analysis(checkpoint_dir: str, spatial_res: int = 64): # <--- INCREASED DEFAULT HERE
     ckpt_path = os.path.abspath(checkpoint_dir)
@@ -156,7 +169,7 @@ def run_analysis(checkpoint_dir: str, spatial_res: int = 64): # <--- INCREASED D
     print(f"Restored from step {latest_step}. Analyzing at {spatial_res}^3 resolution.")
 
     # Generate data at the new higher spatial resolution
-    gt, obs, coords, times = generate_da_data(spatial_res=spatial_res, time_steps=100)
+    gt, obs, coords, times = generate_da_data(spatial_res=spatial_res, time_steps=100, noise_std=0)
     start_idx = 2 
     current_state = gt[start_idx : start_idx + 1]
     
@@ -188,8 +201,8 @@ def run_analysis(checkpoint_dir: str, spatial_res: int = 64): # <--- INCREASED D
     
     # _plot_comparison_grid_3d(predictions, actual_truth, times, start_idx, plot_path)
     
-    _vol_plot_comparison_grid_3d(predictions, actual_truth, times, start_idx, plot_path)
+    _vol_plot_comparison_grid_3d(predictions, actual_truth, times, start_idx, plot_path, component_idx=0)
 
 if __name__ == "__main__":
     # Specify the desired high resolution here (e.g., 64 or 128)
-    run_analysis("./beltrami_experiment/checkpoints/", spatial_res=64)
+    run_analysis("./beltrami_experiment_zero_noise/checkpoints/", spatial_res=64)

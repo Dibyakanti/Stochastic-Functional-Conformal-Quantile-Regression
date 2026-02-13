@@ -29,4 +29,4 @@ def autoregressive_unroll(trainer, start_state, start_time, num_steps, dt):
         
     return jnp.concatenate(trajectory, axis=0)
 
-if __name__=="__main__":
+# if __name__=="__main__":

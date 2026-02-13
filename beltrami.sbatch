@@ -1,6 +1,6 @@
 #!/bin/bash --login
 
-#SBATCH -p gpuL
+#SBATCH -p gpuA
 #SBATCH --gpus=1
 #SBATCH -t 1-0
 #SBATCH --output=./outputs/slurm/beltrami-%j.out

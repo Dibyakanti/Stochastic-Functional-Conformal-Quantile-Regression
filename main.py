@@ -145,27 +145,31 @@ def run(
 
   metric_writer.flush()
 
-if __name__=="__main__":
+if __name__ == "__main__":
+    # --- 1. Configuration ---
+    RES = 64  # Increased spatial resolution
+    BATCH_SIZE = 8  # Reduced batch size to accommodate higher resolution VRAM usage
 
-    # 1. Generate the Dataset
-    # Using spatial_res=32 to fit in memory easily
-    gt, obs, coords, times = generate_da_data(spatial_res=32, time_steps=100)
+    # --- 2. Generate the Dataset ---
+    # Now generating at 64x64x64
+    gt, obs, coords, times = generate_da_data(spatial_res=RES, time_steps=100, noise_std=0)
 
-    # 1. Setup Architecture
+    # --- 3. Setup Architecture ---
     unet_config = UNet3d(
-        out_channels=4,      # Required: [u, v, w, p]
+        out_channels=4,      # [u, v, w, p]
         time_cond=True,
         num_channels=(32, 64, 128, 256),
         use_spatial_attention=(False, False, True, True)
     )
 
-    # 2. Update the Model Wrapper accordingly
+    # --- 4. Update the Model Wrapper ---
+    # input_shape: (Batch, X, Y, Z, Channels) -> Note: Batch here is for initialization
     da_model = DataAssimilationModel(
         model=unet_config, 
-        input_shape=(4, 32, 32, 32, 4) 
+        input_shape=(BATCH_SIZE, RES, RES, RES, 4) 
     )
 
-    # 4. Define Optimizer & Trainer
+    # --- 5. Define Optimizer & Trainer ---
     tx = optax.adamw(learning_rate=1e-4, weight_decay=1e-5)
     trainer = BeltramiTrainer(
         model=da_model, 
@@ -173,9 +177,9 @@ if __name__=="__main__":
         rng=jax.random.PRNGKey(0)
     )
 
-    # 5. Define Callbacks
-    base_workdir = "./beltrami_experiment"
-    workdir = os.path.abspath(base_workdir)  # Converts to absolute path
+    # --- 6. Define Callbacks ---
+    base_workdir = "./beltrami_experiment_zero_noise/"
+    workdir = os.path.abspath(base_workdir)
     callbacks = [
         cb.TqdmProgressBar(
             total_train_steps=5000, 
@@ -184,21 +188,15 @@ if __name__=="__main__":
         cb.TrainStateCheckpoint(base_dir=workdir)
     ]
 
-    # 6. Start Training
+    # --- 7. Start Training ---
+    # Ensure the dataloader receives the high-res data and the new batch size
     run(
-        train_dataloader=beltrami_dataloader(obs, times, batch_size=4),
+        train_dataloader=beltrami_da_dataloader(
+            gt, obs, times, batch_size=BATCH_SIZE, mode="train"
+        ),
         trainer=trainer,
         workdir=workdir,
         total_train_steps=5000,
         metric_aggregation_steps=50,
         callbacks=callbacks
     )
-    
-    # run(
-    #     train_dataloader=beltrami_da_dataloader(obs, times, batch_size=4, mode="train"),
-    #     trainer=trainer,
-    #     workdir=workdir,
-    #     total_train_steps=5000,
-    #     metric_aggregation_steps=50,
-    #     callbacks=callbacks
-    # )

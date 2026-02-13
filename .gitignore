@@ -5,4 +5,5 @@ outputs/*/train_test/
 outputs/*/actual_predict/
 outputs/*
 outputs/slurm/
-beltrami_experiment/
+beltrami_experiment*/
+*/__pycache__/*

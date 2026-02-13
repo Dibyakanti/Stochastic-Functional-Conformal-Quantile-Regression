@@ -97,13 +97,14 @@ def generate_da_data(
     # 4. Generate Noisy Observations
     print("Adding observation noise...")
     key = jax.random.PRNGKey(seed)
-    noise = jax.random.normal(key, shape=ground_truth.shape) * noise_std
+    noise = jax.random.laplace(key, shape=ground_truth.shape) * noise_std
     observations = ground_truth + noise
 
     return ground_truth, observations, {"x": x, "y": y, "z": z}, times
 
 
 def beltrami_dataloader(
+    ground_truth: jax.Array, 
     observations: jax.Array, 
     times: jax.Array, 
     batch_size: int, 
@@ -130,12 +131,13 @@ def beltrami_dataloader(
             # 'x' is the noisy observation at time t
             # 'y' is the ground truth (or noisy observation) at time t+dt
             yield {
-                "x": observations[batch_idx],
+                "x": ground_truth[batch_idx],
                 "y": observations[batch_idx + 1],
                 "time": times[batch_idx]
             }
 
 def beltrami_da_dataloader(
+    ground_truth: jax.Array, 
     observations: jax.Array, 
     times: jax.Array, 
     batch_size: int, 
@@ -158,7 +160,7 @@ def beltrami_da_dataloader(
             batch_idx = indices[i:i + batch_size]
             if len(batch_idx) < batch_size: continue
             yield {
-                "x": observations[batch_idx],
+                "x": ground_truth[batch_idx],
                 "y": observations[batch_idx + 1],
-                "time": times[batch_idx]
+                "time": times[batch_idx + 1] - times[batch_idx]
             }
