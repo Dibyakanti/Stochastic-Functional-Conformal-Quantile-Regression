@@ -1,5 +1,7 @@
 import os
 import sys
+from absl import app, flags
+from ml_collections import config_flags
 
 # --- 1. Environment Setup ---
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -18,7 +20,10 @@ from train.models import DataAssimilationModel
 from train.trainers import BeltramiTrainer
 from data.beltramiDataGeneration import generate_da_data, beltrami_da_dataloader
 
-# --- 2. Advanced Visualization Logic ---
+FLAGS = flags.FLAGS
+config_flags.DEFINE_config_file("config", "configs/config.py")
+
+
 def _plot_comparison_grid(preds, truth, times, start_idx, plot_dir):
     """Plots Truth vs Pred every 20 steps and a separate error plot."""
     os.makedirs(plot_dir, exist_ok=True)
@@ -143,45 +148,64 @@ def _vol_plot_comparison_grid_3d(preds, truth, times, start_idx, plot_dir, compo
     plt.savefig(os.path.join(plot_dir, f"{name}_comparison.png"), bbox_inches='tight')
     plt.close()
     
-# --- 3. Main Analysis Execution ---
-def run_analysis(checkpoint_dir: str, spatial_res: int = 64): # <--- INCREASED DEFAULT HERE
-    ckpt_path = os.path.abspath(checkpoint_dir)
-    experiment_dir = os.path.dirname(ckpt_path.rstrip('/')) 
+# --- 3. Main Analysis ---
+def run_analysis(cfg):
+    """Executes analysis based on the provided ConfigDict."""
+    # Derive paths from config
+    workdir = os.path.abspath(cfg.workdir)
+    ckpt_path = os.path.join(workdir, "checkpoints")
+    plot_path = os.path.join(workdir, "plots")
     
-    # UNet architecture can handle arbitrary spatial_res if fully convolutional
+    # 1. Setup Architecture using Config
     unet_config = UNet3d(
         out_channels=4,
         dtype=jnp.float32,
         time_cond=True,
-        num_channels=(32, 64, 128, 256),
-        use_spatial_attention=(False, False, True, True)
+        num_channels=cfg.model.num_channels,
+        use_spatial_attention=cfg.model.use_spatial_attention
     )
     
-    # Update input shape to match high resolution
-    da_model = DataAssimilationModel(model=unet_config, input_shape=(1, spatial_res, spatial_res, spatial_res, 4))
-    trainer = BeltramiTrainer(model=da_model, optimizer=optax.adamw(1e-4), rng=jax.random.PRNGKey(0))
+    da_model = DataAssimilationModel(
+        model=unet_config, 
+        input_shape=(1, cfg.res, cfg.res, cfg.res, 4)
+    )
+    
+    trainer = BeltramiTrainer(
+        model=da_model, 
+        optimizer=optax.adamw(cfg.learning_rate), 
+        rng=jax.random.PRNGKey(cfg.seed)
+    )
 
+    # 2. Restore Checkpoint
     mngr = ocp.CheckpointManager(ckpt_path)
     latest_step = mngr.latest_step()
-    if latest_step is None: return print(f"No checkpoints in {ckpt_path}")
+    if latest_step is None:
+        print(f"No checkpoints found in {ckpt_path}")
+        return
     
-    trainer.train_state = mngr.restore(latest_step, args=ocp.args.StandardRestore(trainer.train_state))
-    print(f"Restored from step {latest_step}. Analyzing at {spatial_res}^3 resolution.")
+    trainer.train_state = mngr.restore(
+        latest_step, 
+        args=ocp.args.StandardRestore(trainer.train_state)
+    )
+    print(f"Restored from step {latest_step}. Analyzing {cfg.res}^3 resolution.")
 
-    # Generate data at the new higher spatial resolution
-    gt, obs, coords, times = generate_da_data(spatial_res=spatial_res, time_steps=100, noise_std=0)
+    # 3. Generate Data & Predict
+    gt, obs, coords, times = generate_da_data(
+        spatial_res=cfg.res, 
+        time_steps=100, 
+        noise_std=cfg.noise_std
+    )
+    
     start_idx = 2 
     current_state = gt[start_idx : start_idx + 1]
     
     predictions = []
     actual_truth = [] 
-    
     dt = times[1] - times[0] 
     dt_input = jnp.array([dt])
 
     num_unroll_steps = 80
     for i in range(num_unroll_steps):
-        # The model processes high-res data autoregressively
         pred = trainer.model.model.apply(
             trainer.train_state.model_variables,
             current_state,
@@ -195,14 +219,14 @@ def run_analysis(checkpoint_dir: str, spatial_res: int = 64): # <--- INCREASED D
     predictions = jnp.concatenate(predictions, axis=0)
     actual_truth = jnp.stack(actual_truth)
 
-    plot_path = os.path.join(experiment_dir, "plots")
-    
+    # 4. Run Plots
+    print(f"Saving plots to {plot_path}...")
     _plot_comparison_grid(predictions, actual_truth, times, start_idx, plot_path)
-    
-    # _plot_comparison_grid_3d(predictions, actual_truth, times, start_idx, plot_path)
-    
     _vol_plot_comparison_grid_3d(predictions, actual_truth, times, start_idx, plot_path, component_idx=0)
+    print("Analysis complete.")
+
+def main(_):
+    run_analysis(FLAGS.config)
 
 if __name__ == "__main__":
-    # Specify the desired high resolution here (e.g., 64 or 128)
-    run_analysis("./beltrami_experiment_zero_noise/checkpoints/", spatial_res=64)
+    app.run(main)

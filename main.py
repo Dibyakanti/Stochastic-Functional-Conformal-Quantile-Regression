@@ -16,6 +16,8 @@
 """Function that runs training."""
 
 from collections.abc import Iterable, Sequence
+from absl import app, flags
+from ml_collections import config_flags
 from typing import Any
 
 import os
@@ -34,6 +36,8 @@ from model.unet3d import UNet3d
 from train.models import DataAssimilationModel
 from train.trainers import BeltramiTrainer
 
+FLAGS = flags.FLAGS
+config_flags.DEFINE_config_file("config", "configs/config.py")
 
 def run(
     *,
@@ -144,59 +148,70 @@ def run(
     callback.on_train_end(trainer)
 
   metric_writer.flush()
+  
+def main(_):
+    # cfg is now populated by ml_collections based on your EXP_NAME
+    cfg = FLAGS.config
 
-if __name__ == "__main__":
-    # --- 1. Configuration ---
-    RES = 64  # Increased spatial resolution
-    BATCH_SIZE = 8  # Reduced batch size to accommodate higher resolution VRAM usage
+    # --- 1. Directory Setup ---
+    # Convert relative workdir to absolute to avoid issues on the cluster
+    workdir = os.path.abspath(cfg.workdir)
+    os.makedirs(workdir, exist_ok=True)
+    
+    # Google Best Practice: Save a JSON snapshot of the config used for this run
+    with open(os.path.join(workdir, "config.json"), "w") as f:
+        f.write(cfg.to_json(indent=4))
 
     # --- 2. Generate the Dataset ---
-    # Now generating at 64x64x64
-    gt, obs, coords, times = generate_da_data(spatial_res=RES, time_steps=100, noise_std=0)
+    # Using cfg.res and cfg.noise_std from your preset
+    gt, obs, coords, times = generate_da_data(
+        spatial_res=cfg.res, 
+        time_steps=100, 
+        noise_std=cfg.noise_std
+    )
 
     # --- 3. Setup Architecture ---
     unet_config = UNet3d(
-        out_channels=4,      # [u, v, w, p]
+        out_channels=4,
         time_cond=True,
-        num_channels=(32, 64, 128, 256),
-        use_spatial_attention=(False, False, True, True)
+        num_channels=cfg.model.num_channels,
+        use_spatial_attention=cfg.model.use_spatial_attention
     )
 
     # --- 4. Update the Model Wrapper ---
-    # input_shape: (Batch, X, Y, Z, Channels) -> Note: Batch here is for initialization
     da_model = DataAssimilationModel(
         model=unet_config, 
-        input_shape=(BATCH_SIZE, RES, RES, RES, 4) 
+        input_shape=(cfg.batch_size, cfg.res, cfg.res, cfg.res, 4) 
     )
 
     # --- 5. Define Optimizer & Trainer ---
-    tx = optax.adamw(learning_rate=1e-4, weight_decay=1e-5)
+    tx = optax.adamw(learning_rate=cfg.learning_rate, weight_decay=1e-5)
     trainer = BeltramiTrainer(
         model=da_model, 
         optimizer=tx, 
-        rng=jax.random.PRNGKey(0)
+        rng=jax.random.PRNGKey(cfg.seed)
     )
 
     # --- 6. Define Callbacks ---
-    base_workdir = "./beltrami_experiment_zero_noise/"
-    workdir = os.path.abspath(base_workdir)
     callbacks = [
         cb.TqdmProgressBar(
-            total_train_steps=5000, 
+            total_train_steps=cfg.total_train_steps, 
             train_monitors=["train_loss"]
         ),
         cb.TrainStateCheckpoint(base_dir=workdir)
     ]
 
     # --- 7. Start Training ---
-    # Ensure the dataloader receives the high-res data and the new batch size
     run(
         train_dataloader=beltrami_da_dataloader(
-            gt, obs, times, batch_size=BATCH_SIZE, mode="train"
+            gt, obs, times, batch_size=cfg.batch_size, mode="train"
         ),
         trainer=trainer,
         workdir=workdir,
-        total_train_steps=5000,
-        metric_aggregation_steps=50,
+        total_train_steps=cfg.total_train_steps,
+        metric_aggregation_steps=100,
         callbacks=callbacks
     )
+
+if __name__ == "__main__":
+    app.run(main)

@@ -8,6 +8,9 @@
 module purge
 module load libs/cuda
 
+export EXP_NAME=${EXP_NAME:-baseline}
+export SINGULARITYENV_EXP_NAME="$EXP_NAME"
+
 export SINGULARITY_HOME="$HOME"
 export SINGULARITY_LANG="$LANG"
 
@@ -17,4 +20,4 @@ if [ -n "$CUDA_VISIBLE_DEVICES" ]; then
 	export SINGULARITYENV_CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"
 fi
 
-singularity exec --nv ./singularity/jax-csf3_latest.sif python ./main.py
+singularity exec --nv ./singularity/jax-csf3_latest.sif python ./main.py --config="configs/config.py:${EXP_NAME}"
