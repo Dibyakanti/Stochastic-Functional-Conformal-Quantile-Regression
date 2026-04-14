@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir \
     tensorflow-cpu \
     ml-collections \
     tqdm \
-    matplotlib
+    matplotlib \
+    seaborn
 
 # Set workdir
 WORKDIR /app

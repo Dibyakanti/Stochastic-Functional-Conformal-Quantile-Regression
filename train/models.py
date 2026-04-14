@@ -181,3 +181,45 @@ class DataAssimilationModel(BaseModel):
     )
     mse = jnp.mean(jnp.square(preds - batch["y"]))
     return {"mse": mse}
+  
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class QuantileEnsembleDAModel(BaseModel):
+  model: Any
+  input_shape: tuple[int, ...]
+  n_ens: int = 1
+  tau: float = 0.5
+
+  def initialize(self, rng: jax.Array) -> Any:
+    # Initialize 'n_ens' independent sets of parameters
+    dummy_x = jnp.zeros(self.input_shape)
+    batch_size = self.input_shape[0]
+    init_keys = jax.random.split(rng, self.n_ens)
+    
+    return jax.vmap(lambda k: self.model.init(
+        k, dummy_x, time=jnp.zeros((batch_size,)), is_training=False
+    ))(init_keys)
+
+  def loss_fn(self, params: Any, batch: dict[str, jax.Array], rng: jax.Array, mutables: Any) -> LossAndAux:
+    def single_loss(p, m):
+      preds = self.model.apply({"params": p, **m}, batch["x"], 
+                               time=batch["time"], is_training=True,
+                               rngs={"dropout": rng} if rng is not None else None)
+      err = batch["y"] - preds
+      # Pinball loss: max(tau*err, (tau-1)*err)
+      return jnp.mean(jnp.maximum(self.tau * err, (self.tau - 1) * err))
+
+    # Average loss across the ensemble
+    losses = jax.vmap(single_loss)(params, mutables)
+    loss = jnp.mean(losses)
+    return loss, ({"loss": loss}, mutables)
+
+  def eval_fn(self, variables: Any, batch: dict[str, jax.Array], rng: jax.Array) -> dict[str, jax.Array]:
+    # vmap apply to get all ensemble predictions
+    preds = jax.vmap(lambda p, m: self.model.apply(
+        {"params": p, **m}, batch["x"], time=batch["time"], is_training=False
+    ))(variables["params"], variables.get("mutables", {}))
+    
+    # Checkpoint metrics: use the mean of the ensemble for MSE
+    avg_pred = jnp.mean(preds, axis=0)
+    mse = jnp.mean(jnp.square(avg_pred - batch["y"]))
+    return {"mse": mse}

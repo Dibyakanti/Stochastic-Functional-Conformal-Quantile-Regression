@@ -16,7 +16,7 @@
 """Function that runs training."""
 
 from collections.abc import Iterable, Sequence
-from absl import app, flags
+from absl import app, flags, logging
 from ml_collections import config_flags
 from typing import Any
 
@@ -35,6 +35,8 @@ from data.beltramiDataGeneration import *
 from model.unet3d import UNet3d
 from train.models import DataAssimilationModel
 from train.trainers import BeltramiTrainer
+
+logging.set_verbosity(logging.ERROR)
 
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", "configs/config.py")
@@ -166,7 +168,10 @@ def main(_):
     # Using cfg.res and cfg.noise_std from your preset
     gt, obs, coords, times = generate_da_data(
         spatial_res=cfg.res, 
-        time_steps=100, 
+        time_steps=cfg.time_steps,
+        dt=cfg.dt, 
+        a=1.0,
+        d=1.0,
         noise_std=cfg.noise_std
     )
 
@@ -209,7 +214,7 @@ def main(_):
         trainer=trainer,
         workdir=workdir,
         total_train_steps=cfg.total_train_steps,
-        metric_aggregation_steps=100,
+        metric_aggregation_steps=500,
         callbacks=callbacks
     )
 

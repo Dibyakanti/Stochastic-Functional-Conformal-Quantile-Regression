@@ -131,7 +131,7 @@ def beltrami_dataloader(
             # 'x' is the noisy observation at time t
             # 'y' is the ground truth (or noisy observation) at time t+dt
             yield {
-                "x": ground_truth[batch_idx],
+                "x": observations[batch_idx],
                 "y": observations[batch_idx + 1],
                 "time": times[batch_idx]
             }
@@ -145,7 +145,7 @@ def beltrami_da_dataloader(
 ):
     num_time_steps = observations.shape[0]
     # Indices 0 to T-2 (to allow for i+1 target)
-    all_indices = np.arange(num_time_steps - 1)
+    all_indices = np.arange(num_time_steps - 3)
     
     if mode == "train":
         # Keep only odd indices: t=1, 3, 5...
@@ -160,7 +160,7 @@ def beltrami_da_dataloader(
             batch_idx = indices[i:i + batch_size]
             if len(batch_idx) < batch_size: continue
             yield {
-                "x": ground_truth[batch_idx],
-                "y": observations[batch_idx + 1],
-                "time": times[batch_idx + 1] - times[batch_idx]
+                "x": observations[batch_idx],
+                "y": observations[batch_idx + 2],
+                "time": times[batch_idx + 2] - times[batch_idx]
             }

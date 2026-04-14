@@ -27,7 +27,7 @@ config_flags.DEFINE_config_file("config", "configs/config.py")
 def _plot_comparison_grid(preds, truth, times, start_idx, plot_dir):
     """Plots Truth vs Pred every 20 steps and a separate error plot."""
     os.makedirs(plot_dir, exist_ok=True)
-    step_indices = np.arange(0, len(preds), 20)
+    step_indices = np.arange(0, len(preds), 5)
     num_cols = len(step_indices)
     mid_z = preds.shape[2] // 2
     
@@ -105,7 +105,7 @@ def _vol_plot_comparison_grid_3d(preds, truth, times, start_idx, plot_dir, compo
     comp_names = {0: 'u-velocity', 1: 'v-velocity', 2: 'w-velocity', 3: 'pressure'}
     name = comp_names.get(component_idx, f'channel_{component_idx}')
     
-    step_indices = np.arange(0, len(preds), 20)
+    step_indices = np.arange(0, len(preds), 5)
     num_cols = len(step_indices)
     
     data_truth = truth[..., component_idx]
@@ -192,7 +192,10 @@ def run_analysis(cfg):
     # 3. Generate Data & Predict
     gt, obs, coords, times = generate_da_data(
         spatial_res=cfg.res, 
-        time_steps=100, 
+        time_steps=cfg.time_steps,
+        dt=cfg.dt, 
+        a=1.0,
+        d=1.0,
         noise_std=cfg.noise_std
     )
     
@@ -204,7 +207,7 @@ def run_analysis(cfg):
     dt = times[1] - times[0] 
     dt_input = jnp.array([dt])
 
-    num_unroll_steps = 80
+    num_unroll_steps = cfg.num_unroll_steps
     for i in range(num_unroll_steps):
         pred = trainer.model.model.apply(
             trainer.train_state.model_variables,
