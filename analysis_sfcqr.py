@@ -8,12 +8,16 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 from matplotlib.colors import Normalize
+import matplotlib.animation as animation
 from matplotlib.cm import ScalarMappable
 import optax
 import orbax.checkpoint as ocp
 from absl import app, flags
 from ml_collections import config_flags
 from itertools import product
+from PIL import Image
+from vape4d import render
+from vape4d.utils import diverging_alpha
 
 # --- Imports from your project ---
 from model.unet3d import UNet3d
@@ -79,66 +83,190 @@ def _draw_scatter_cube(ax, vol, norm, cmap):
     ax.set_box_aspect([1, 1, 1])
     ax.set_axis_off()
     ax.view_init(elev=22, azim=35)
+
+RENDER_W     = 64      # vape4d render resolution (pixels)
+RENDER_H     = 64
+DPI          = 90
+VIDEO_FPS    = 4        # frames per second in output MP4
+ 
+ 
+# # ── 3-D scatter cube ──────────────────────────────────────────────────────────
+ 
+# def _draw_scatter_cube(ax, vol, norm, cmap):
+#     """
+#     Render vol (res, res, res) as a 3-D scatter plot.
+#     Each grid point is a dot coloured by its scalar value.
+#     """
+#     res = vol.shape[0]
+#     xi, yi, zi = np.meshgrid(
+#         np.arange(res), np.arange(res), np.arange(res), indexing="ij"
+#     )
+#     colors = mpl.cm.get_cmap(cmap)(norm(vol.ravel()))
+ 
+#     ax.scatter(
+#         xi.ravel(), yi.ravel(), zi.ravel(),
+#         c=colors,
+#         s=MARKER_SIZE,
+#         marker="o",
+#         linewidths=0,
+#         depthshade=True,
+#     )
+ 
+#     ax.set_xlim(0, res - 1)
+#     ax.set_ylim(0, res - 1)
+#     ax.set_zlim(0, res - 1)
+#     ax.set_box_aspect([1, 1, 1])
+#     ax.set_axis_off()
+#     ax.view_init(elev=22, azim=35)
+ 
+ 
+# # ── per-timestep figure ───────────────────────────────────────────────────────
+ 
+# def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
+#     """
+#     lo_vol, hi_vol, gt_vol : list of 4 arrays, each (res, res, res).
+ 
+#     Layout  (3 rows x 4 fields + ONE shared colorbar on the far right)
+#     ───────────────────────────────────────────────────────────────────
+#     Row 0  lower bound  │ u_lo  v_lo  w_lo  p_lo │
+#     Row 1  upper bound  │ u_hi  v_hi  w_hi  p_hi │  ← single colorbar
+#     Row 2  ground truth │ u_gt  v_gt  w_gt  p_gt │
+#     """
+#     n_fields   = 4
+#     row_labels = ["lower bound", "upper bound", "ground truth"]
+#     row_colors = ["#3b82f6", "#ef4444", "#16a34a"]
+ 
+#     # One global symmetric colour scale across ALL fields and rows
+#     all_vals = np.concatenate(
+#         [v.ravel() for v in lo_vol + hi_vol + gt_vol]
+#     )
+#     vmax = float(np.max(np.abs(all_vals)))
+#     norm = Normalize(vmin=-vmax, vmax=vmax)
+#     cmap = mpl.colormaps[CMAP]
+ 
+#     # GridSpec: 4 cube columns + 1 thin colorbar column
+#     width_ratios = [6] * n_fields + [0.5]
+#     fig = plt.figure(figsize=(16, 9), facecolor="white")
+#     gs  = gridspec.GridSpec(3, n_fields + 1,
+#                             width_ratios=width_ratios,
+#                             wspace=0.02, hspace=0.05,
+#                             left=0.06, right=0.97,
+#                             top=0.92, bottom=0.02)
+ 
+#     for f in range(n_fields):
+#         vols      = [lo_vol[f], hi_vol[f], gt_vol[f]]
+#         subtitles = [
+#             f"{FIELD_NAMES[f]}  lower",
+#             f"{FIELD_NAMES[f]}  upper",
+#             f"{FIELD_NAMES[f]}  truth",
+#         ]
+#         for row in range(3):
+#             ax = fig.add_subplot(gs[row, f], projection="3d")
+#             _draw_scatter_cube(ax, vols[row], norm, cmap)
+#             ax.set_title(subtitles[row],
+#                          fontsize=8, pad=1,
+#                          color=row_colors[row], fontweight="500")
+ 
+#     # single shared colorbar on the far right, spanning all rows
+#     cax = fig.add_subplot(gs[:, n_fields])
+#     cb  = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
+#                        cax=cax, orientation="vertical")
+#     cb.ax.tick_params(labelsize=7)
+#     cb.set_label("field value", fontsize=8, labelpad=4)
+ 
+#     # rotated row labels on left margin
+#     for row, (label, color) in enumerate(zip(row_labels, row_colors)):
+#         y_pos = 0.87 - row * 0.295
+#         fig.text(0.005, y_pos, label,
+#                  va="center", ha="left", fontsize=9,
+#                  fontweight="bold", color=color, rotation=90)
+ 
+#     fig.suptitle(
+#         f"Beltrami conformal prediction intervals  ·  "
+#         f"α={alpha}  s={n_ens}  t={t}",
+#         fontsize=10, fontweight="500", y=0.97
+#     )
+ 
+#     os.makedirs(folder, exist_ok=True)
+#     lr_str = str(lr).replace(".", "p")
+#     fname  = os.path.join(
+#         folder, f"cubes_alpha{alpha}_nens{n_ens}_lr{lr_str}_t{t:03d}.png"
+#     )
+#     fig.savefig(fname, dpi=DPI, bbox_inches="tight")
+#     plt.close(fig)
+#     print(f"  saved {fname}")
+
+# ── vape4d volume render ──────────────────────────────────────────────────────
+ 
+def _render_volume(vol, vmin, vmax, cmap_base="RdBu_r"):
+    """
+    Render a single (res, res, res) volume with vape4d.
+    Values are normalised to [0,1] using the global vmin/vmax so that
+    the colour scale is identical across all panels and timesteps.
+    Returns (H, W, 4) uint8 RGBA.
+    """
+    vol_norm = (vol.astype(np.float32) - vmin) / (vmax - vmin + 1e-8)
+    vol_norm = np.clip(vol_norm, 0.0, 1.0)
+    data     = vol_norm[np.newaxis]   # (1, res, res, res)  [T,D,H,W]
+    colormap = diverging_alpha(mpl.colormaps[cmap_base])
+    return render(data, colormap, width=RENDER_W, height=RENDER_H)
  
  
 # ── per-timestep figure ───────────────────────────────────────────────────────
  
-def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
+def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol,
+                        vmin_global, vmax_global, norm,
+                        folder, alpha, n_ens, lr):
     """
-    lo_vol, hi_vol, gt_vol : list of 4 arrays, each (res, res, res).
+    Render and save one PNG for timestep t.
  
-    Layout  (3 rows x 4 fields + ONE shared colorbar on the far right)
-    ───────────────────────────────────────────────────────────────────
+    lo_vol, hi_vol, gt_vol : list of 4 arrays, each (res, res, res).
+    vmin_global, vmax_global, norm : shared colour scale (pre-computed outside).
+ 
+    Layout  (3 rows × 4 fields + 1 shared colorbar)
+    ────────────────────────────────────────────────
     Row 0  lower bound  │ u_lo  v_lo  w_lo  p_lo │
     Row 1  upper bound  │ u_hi  v_hi  w_hi  p_hi │  ← single colorbar
     Row 2  ground truth │ u_gt  v_gt  w_gt  p_gt │
     """
-    n_fields   = 4
     row_labels = ["lower bound", "upper bound", "ground truth"]
     row_colors = ["#3b82f6", "#ef4444", "#16a34a"]
+    all_rows   = [lo_vol, hi_vol, gt_vol]
  
-    # One global symmetric colour scale across ALL fields and rows
-    all_vals = np.concatenate(
-        [v.ravel() for v in lo_vol + hi_vol + gt_vol]
-    )
-    vmax = float(np.max(np.abs(all_vals)))
-    norm = Normalize(vmin=-vmax, vmax=vmax)
-    cmap = mpl.colormaps[CMAP]
+    # render all 12 volumes
+    rendered = [
+        [_render_volume(vol, vmin_global, vmax_global) for vol in row_vols]
+        for row_vols in all_rows
+    ]
  
-    # GridSpec: 4 cube columns + 1 thin colorbar column
-    width_ratios = [6] * n_fields + [0.5]
-    fig = plt.figure(figsize=(16, 9), facecolor="white")
-    gs  = gridspec.GridSpec(3, n_fields + 1,
+    width_ratios = [6] * 4 + [0.45]
+    fig = plt.figure(figsize=(17, 9), facecolor="white")
+    gs  = gridspec.GridSpec(3, 5,
                             width_ratios=width_ratios,
-                            wspace=0.02, hspace=0.05,
+                            wspace=0.02, hspace=0.06,
                             left=0.06, right=0.97,
                             top=0.92, bottom=0.02)
  
-    for f in range(n_fields):
-        vols      = [lo_vol[f], hi_vol[f], gt_vol[f]]
-        subtitles = [
-            f"{FIELD_NAMES[f]}  lower",
-            f"{FIELD_NAMES[f]}  upper",
-            f"{FIELD_NAMES[f]}  truth",
-        ]
-        for row in range(3):
-            ax = fig.add_subplot(gs[row, f], projection="3d")
-            _draw_scatter_cube(ax, vols[row], norm, cmap)
-            ax.set_title(subtitles[row],
-                         fontsize=8, pad=1,
-                         color=row_colors[row], fontweight="500")
+    for row in range(3):
+        for f in range(4):
+            ax = fig.add_subplot(gs[row, f])
+            ax.imshow(rendered[row][f])
+            ax.set_axis_off()
+            ax.set_title(
+                f"{FIELD_NAMES[f]}  {['lower','upper','truth'][row]}",
+                fontsize=8, pad=2,
+                color=row_colors[row], fontweight="500"
+            )
  
-    # single shared colorbar on the far right, spanning all rows
-    cax = fig.add_subplot(gs[:, n_fields])
-    cb  = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
+    # single shared colorbar
+    cax = fig.add_subplot(gs[:, 4])
+    cb  = fig.colorbar(ScalarMappable(norm=norm, cmap=mpl.colormaps["RdBu_r"]),
                        cax=cax, orientation="vertical")
     cb.ax.tick_params(labelsize=7)
     cb.set_label("field value", fontsize=8, labelpad=4)
  
-    # rotated row labels on left margin
     for row, (label, color) in enumerate(zip(row_labels, row_colors)):
-        y_pos = 0.87 - row * 0.295
-        fig.text(0.005, y_pos, label,
+        fig.text(0.005, 0.87 - row * 0.295, label,
                  va="center", ha="left", fontsize=9,
                  fontweight="bold", color=color, rotation=90)
  
@@ -156,6 +284,56 @@ def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
     fig.savefig(fname, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {fname}")
+    return fname
+ 
+ 
+# ── video ─────────────────────────────────────────────────────────────────────
+ 
+def _natural_sort_key(s):
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r"(\d+)", s)]
+ 
+ 
+def make_video(png_paths, output_path, fps=VIDEO_FPS):
+    """Stitch a list of PNG paths (in order) into an MP4 via FFMpegWriter."""
+    if not png_paths:
+        print("  No frames to encode — skipping video.")
+        return
+ 
+    img0  = np.array(Image.open(png_paths[0]))
+    h, w  = img0.shape[:2]
+    fig, ax = plt.subplots(figsize=(w / 100, h / 100), facecolor="white")
+    ax.axis("off")
+    fig.subplots_adjust(0, 0, 1, 1)
+ 
+    im  = ax.imshow(img0)
+    txt = ax.text(0.01, 0.99, "", transform=ax.transAxes,
+                  fontsize=9, va="top", ha="left", color="white",
+                  bbox=dict(boxstyle="round,pad=0.2", fc="black", alpha=0.4))
+ 
+    def update(i):
+        img = np.array(Image.open(png_paths[i]))
+        im.set_data(img)
+        txt.set_text(f"t = {i:03d} / {len(png_paths)-1:03d}")
+        return im, txt
+ 
+    ani = animation.FuncAnimation(
+        fig, update,
+        frames=len(png_paths),
+        interval=1000 / fps,
+        blit=True
+    )
+ 
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+ 
+    writer = animation.FFMpegWriter(
+        fps=fps,
+        codec="libx264",
+        extra_args=["-pix_fmt", "yuv420p", "-crf", "18"]
+    )
+    print(f"  encoding {len(png_paths)} frames → {output_path}")
+    ani.save(output_path, writer=writer, dpi=100)
+    plt.close(fig)
+    print(f"  video saved.")
 
 def run_analysis(cfg):
     workdir_root = os.path.abspath(cfg.workdir)
@@ -231,7 +409,7 @@ def run_analysis(cfg):
         all_preds_lo, all_preds_hi, actual_truth = [], [], []
 
         for i in range(cfg.num_unroll_steps):
-            current_state = gt[start_idx + (2*i) : start_idx + + (2*i) + 1]
+            current_state = obs[start_idx + (2*i) : start_idx + + (2*i) + 1]
             batch_size = current_state.shape[0]
             dt_val = times[2] - times[0]
             dt_input = jnp.full((batch_size,), dt_val)
@@ -248,26 +426,79 @@ def run_analysis(cfg):
         preds_hi = jnp.concatenate(all_preds_hi, axis=0)
         truth = jnp.stack(actual_truth)
         
-                # ── cube scatter plots ────────────────────────────────────────────────
-        cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
-        n_time   = truth.shape[0]
+        # # ── cube scatter plots ────────────────────────────────────────────────
+        # cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
+        # n_time   = truth.shape[0]
+ 
+        # for t in range(n_time):
+        #     lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(4)]
+        #     hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(4)]
+        #     gt_vol = [np.array(truth[t, ..., f]) for f in range(4)]
+ 
+        #     plot_interval_cubes(
+        #         t=(2*t)+2,
+        #         lo_vol=lo_vol,
+        #         hi_vol=hi_vol,
+        #         gt_vol=gt_vol,
+        #         folder=cube_dir,
+        #         alpha=alpha,
+        #         n_ens=n_ens,
+        #         lr=cfg.learning_rate,
+        #     )
+        # ── compute ONE global colour scale for this (alpha, n_ens) run ───────
+        all_vals    = np.concatenate([
+            np.array(preds_lo).ravel(),
+            np.array(preds_hi).ravel(),
+            np.array(truth).ravel(),
+        ])
+        vmax_global = float(np.max(np.abs(all_vals)))
+        vmin_global = -vmax_global
+        norm        = Normalize(vmin=vmin_global, vmax=vmax_global)
+ 
+        # ── cube plots + collect PNG paths for video ──────────────────────────
+        cube_dir  = os.path.join(workdir_root, "analysis_plots", "cubes")
+        n_time    = truth.shape[0]
+        png_paths = []
  
         for t in range(n_time):
             lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(4)]
             hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(4)]
-            gt_vol = [np.array(truth[t, ..., f]) for f in range(4)]
+            gt_vol = [np.array(truth[t,    ..., f]) for f in range(4)]
  
-            plot_interval_cubes(
-                t=(2*t)+2,
+            fname = plot_interval_cubes(
+                t=t,
                 lo_vol=lo_vol,
                 hi_vol=hi_vol,
                 gt_vol=gt_vol,
+                vmin_global=vmin_global,
+                vmax_global=vmax_global,
+                norm=norm,
                 folder=cube_dir,
                 alpha=alpha,
                 n_ens=n_ens,
                 lr=cfg.learning_rate,
             )
+            png_paths.append(fname)
  
+        # ── stitch PNGs into MP4 ──────────────────────────────────────────────
+        lr_str    = str(cfg.learning_rate).replace(".", "p")
+        video_dir = os.path.join(workdir_root, "analysis_plots", "videos")
+        video_out = os.path.join(
+            video_dir,
+            f"beltrami_alpha{alpha}_nens{n_ens}_lr{lr_str}.mp4"
+        )
+        make_video(png_paths, video_out, fps=VIDEO_FPS)
+ 
+        # ── scalar metrics ────────────────────────────────────────────────────
+        is_covered         = (truth >= preds_lo) & (truth <= preds_hi)
+        coverage           = jnp.mean(is_covered, axis=(0, 1, 2, 3))
+        interval_widths    = preds_hi - preds_lo
+        avg_interval_sizes = jnp.mean(interval_widths, axis=(0, 1, 2, 3))
+ 
+        coverage_list.append(coverage)
+        s_hmap_list.append(n_ens)
+        alpha_hmap_list.append(alpha)
+        interval_size_list.append(avg_interval_sizes)
 
         is_covered = (truth >= preds_lo) & (truth <= preds_hi)
         coverage = jnp.mean(is_covered, axis=(0, 1, 2, 3))

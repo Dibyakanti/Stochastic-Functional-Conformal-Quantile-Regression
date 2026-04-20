@@ -29,7 +29,8 @@ def sfcqr():
     config.n_ens = 2
     config.workdir = "./results/sfcqr"
     config.num_unroll_steps = 20
-    config.alpha_list = [2**-5, 2**-4, 2**-3]
+    config.alpha_list = [0.20, 0.25, 0.30]
+    # config.alpha_list = [2**-5, 2**-4, 2**-3]
     config.n_ens_list = [1, 2, 4, 6]
     config.model = config_dict.ConfigDict({
         'num_channels': (16, 32, 64),
@@ -48,7 +49,7 @@ def sfcqr_lower_lr():
     config.n_ens = 2
     config.workdir = "./results/sfcqr_lower_lr"
     config.num_unroll_steps = 20
-    config.alpha_list = [0.80, 0.75, 0.70]
+    config.alpha_list = [0.20, 0.25, 0.30]
     config.n_ens_list = [1, 2, 4, 6]
     config.model = config_dict.ConfigDict({
         'num_channels': (16, 32, 64),
