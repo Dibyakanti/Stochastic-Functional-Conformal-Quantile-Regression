@@ -6,7 +6,7 @@
 #SBATCH --output=./outputs/slurm/beltrami-%j.out
 
 module purge
-module load libs/cuda
+# module load libs/cuda
 
 export SINGULARITYENV_JAX_LOG_LEVEL=error
 export SINGULARITYENV_TF_CPP_MIN_LOG_LEVEL=2

@@ -66,7 +66,7 @@ def plot_line(
             
     if draw_c_true:
         plt.yscale("log")
-        thetas = jnp.linspace(0, float(max(df["y"])/2), 1000000)
+        thetas = jnp.linspace(0.9, float(max(df["y"])/2), 1000000)
         b = noise_scale
         y = 1.0 - jnp.exp(-thetas / b)
         plt.plot(y, 2*thetas, color="black", linewidth=1, label=r'$C_{true}$')
