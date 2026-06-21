@@ -15,9 +15,7 @@ import orbax.checkpoint as ocp
 from absl import app, flags
 from ml_collections import config_flags
 from itertools import product
-from PIL import Image
-from vape4d import render
-from vape4d.utils import diverging_alpha
+import pyvista as pv
 
 from model.unet3d import UNet3d
 from train.models import QuantileEnsembleDAModel  # Use the Ensemble Model
@@ -59,10 +57,10 @@ DPI         = 100
 MARKER_SIZE = 14   # scatter dot size — increase for coarser grids
 
 
-RENDER_W     = 16      # vape4d render resolution (pixels)
-RENDER_H     = 16
-DPI          = 90
-VIDEO_FPS    = 4        # frames per second in output MP4
+# RENDER_W     = 16      # vape4d render resolution (pixels)
+# RENDER_H     = 16
+# DPI          = 90
+# VIDEO_FPS    = 4        # frames per second in output MP4
 
 
 # ── 3-D scatter cube ──────────────────────────────────────────────────────────
@@ -289,70 +287,25 @@ def run_analysis(cfg):
         truth = jnp.stack(actual_truth)
         
         # ── cube scatter plots ────────────────────────────────────────────────
-        # cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
-        # n_time   = truth.shape[0]
+        cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
+        n_time   = truth.shape[0]
  
-        # for t in range(n_time):
-        #     lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(out_dim)]
-        #     hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(out_dim)]
-        #     gt_vol = [np.array(truth[t, ..., f]) for f in range(out_dim)]
+        for t in range(n_time):
+            lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(out_dim)]
+            hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(out_dim)]
+            gt_vol = [np.array(truth[t, ..., f]) for f in range(out_dim)]
  
-        #     plot_interval_cubes(
-        #         t=(2*t)+2,
-        #         n_fields=out_dim,
-        #         lo_vol=lo_vol,
-        #         hi_vol=hi_vol,
-        #         gt_vol=gt_vol,
-        #         folder=cube_dir,
-        #         alpha=alpha,
-        #         n_ens=n_ens,
-        #         lr=cfg.learning_rate,
-        #     )
-        
-        
-        # ── compute ONE global colour scale for this (alpha, n_ens) run ───────
-        # all_vals    = np.concatenate([
-        #     np.array(preds_lo).ravel(),
-        #     np.array(preds_hi).ravel(),
-        #     np.array(truth).ravel(),
-        # ])
-        # vmax_global = float(np.max(np.abs(all_vals)))
-        # vmin_global = -vmax_global
-        # norm        = Normalize(vmin=vmin_global, vmax=vmax_global)
- 
-        # ── cube plots + collect PNG paths for video ──────────────────────────
-        # cube_dir  = os.path.join(workdir_root, "analysis_plots", "cubes")
-        # n_time    = truth.shape[0]
-        # png_paths = []
- 
-        # for t in range(n_time):
-        #     lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(4)]
-        #     hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(4)]
-        #     gt_vol = [np.array(truth[t,    ..., f]) for f in range(4)]
- 
-        #     fname = plot_interval_cubes(
-        #         t=t,
-        #         lo_vol=lo_vol,
-        #         hi_vol=hi_vol,
-        #         gt_vol=gt_vol,
-        #         vmin_global=vmin_global,
-        #         vmax_global=vmax_global,
-        #         norm=norm,
-        #         folder=cube_dir,
-        #         alpha=alpha,
-        #         n_ens=n_ens,
-        #         lr=cfg.learning_rate,
-        #     )
-        #     png_paths.append(fname)
- 
-        # # ── stitch PNGs into MP4 ──────────────────────────────────────────────
-        # lr_str    = str(cfg.learning_rate).replace(".", "p")
-        # video_dir = os.path.join(workdir_root, "analysis_plots", "videos")
-        # video_out = os.path.join(
-        #     video_dir,
-        #     f"beltrami_alpha{alpha}_nens{n_ens}_lr{lr_str}.mp4"
-        # )
-        # make_video(png_paths, video_out, fps=VIDEO_FPS)
+            plot_interval_cubes(
+                t=(2*t)+2,
+                n_fields=out_dim,
+                lo_vol=lo_vol,
+                hi_vol=hi_vol,
+                gt_vol=gt_vol,
+                folder=cube_dir,
+                alpha=alpha,
+                n_ens=n_ens,
+                lr=cfg.learning_rate,
+            )
  
         # ── scalar metrics ────────────────────────────────────────────────────
         is_covered         = (truth >= preds_lo) & (truth <= preds_hi)

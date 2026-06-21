@@ -12,7 +12,8 @@ RUN pip install --no-cache-dir \
     tqdm \
     matplotlib \
     seaborn \
-    vape4d
+    pyvista \
+    apebench
 
 # Set workdir
 WORKDIR /app
