@@ -7,15 +7,12 @@ RUN pip install --no-cache-dir \
     clu \
     orbax-checkpoint \
     tensorflow-cpu \
+    tensorboard \
     ml-collections \
     tqdm \
     matplotlib \
-<<<<<<< HEAD
-    seaborn
-=======
     seaborn \
     vape4d
->>>>>>> d537e5a (Commit changes from CFS3)
 
 # Set workdir
 WORKDIR /app

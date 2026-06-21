@@ -40,34 +40,52 @@ def dataloader(
                 "time": times[batch_idx]
             }
 
+# def da_dataloader(
+#     indices: jax.Array, 
+#     ground_truth: jax.Array, 
+#     observations: jax.Array, 
+#     times: jax.Array, 
+#     batch_size: int, 
+#     mode: str = "train"  # "train" for odd, "eval" for even
+# ):  
+#     indices_np = np.array(indices)
+    
+#     while True:
+#         np.random.shuffle(indices_np)
+#         for i in range(0, len(indices_np), batch_size):
+#             batch_idx = indices_np[i:i + batch_size]
+#             if len(batch_idx) < batch_size: continue
+#             yield {
+#                 "x": observations[batch_idx],
+#                 "y": observations[batch_idx + 2],
+#                 "time": times[batch_idx + 2] - times[batch_idx]
+#             }
+
 def da_dataloader(
-    indices: jax.Array, 
-    ground_truth: jax.Array, 
-    observations: jax.Array, 
-    times: jax.Array, 
-    batch_size: int, 
+    indices: np.ndarray,
+    ground_truth: np.ndarray,
+    observations: np.ndarray,
+    times: np.ndarray,
+    batch_size: int,
     mode: str = "train"  # "train" for odd, "eval" for even
 ):
-    # num_time_steps = observations.shape[0]
-    # # Indices 0 to T-2 (to allow for i+1 target)
-    # all_indices = np.arange(num_time_steps - 3)
-    
-    # if mode == "train":
-    #     # Keep only odd indices: t=1, 3, 5...
-    #     indices = all_indices[all_indices % 2 != 0]
-    # else:
-    #     # Keep only even indices starting from t=2: t=2, 4, 6...
-    #     indices = all_indices[(all_indices % 2 == 0) & (all_indices >= 2)]
-    
-    indices_np = np.array(indices)
-    
+    indices_np = np.array(indices, copy=True)
+    observations_np = np.asarray(observations)
+    times_np = np.asarray(times)
+
     while True:
         np.random.shuffle(indices_np)
         for i in range(0, len(indices_np), batch_size):
             batch_idx = indices_np[i:i + batch_size]
-            if len(batch_idx) < batch_size: continue
+            if len(batch_idx) < batch_size:
+                continue
+
+            x = observations_np[batch_idx]
+            y = observations_np[batch_idx + 2]
+            t = times_np[batch_idx + 2] - times_np[batch_idx]
+
             yield {
-                "x": observations[batch_idx],
-                "y": observations[batch_idx + 2],
-                "time": times[batch_idx + 2] - times[batch_idx]
+                "x": jax.device_put(x),
+                "y": jax.device_put(y),
+                "time": jax.device_put(t),
             }

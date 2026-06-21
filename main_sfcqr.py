@@ -33,10 +33,13 @@ sys.path.append("./")
 import train.callbacks as cb
 from train import trainers
 import utils
+from data.ks3dDataGeneration import *
 from data.beltramiDataGeneration import *
+from utils.data_utils import *
 from model.unet3d import UNet3d
 from train.models import QuantileEnsembleDAModel
 from train.trainers import BeltramiTrainer
+from train.optimizer import *
 
 logging.set_verbosity(logging.ERROR)
 
@@ -182,30 +185,46 @@ def get_predictions(trainer, observations, times):
     
     # Shape: [n_ens, N_cal, res, res, res, channels]
     return ensemble_preds
-  
-  
+
+
 def main(_):
     cfg = FLAGS.config
     workdir_root = os.path.abspath(cfg.workdir)
     
     # --- Data Generation ---
-    gt, obs, coords, times = generate_da_data(
+    if cfg.type=="beltrami":
+      
+      out_dim = 4
+      
+      gt, obs, coords, times = generate_beltrami_da_data(
         spatial_res=cfg.res, 
         time_steps=cfg.time_steps,
         dt=cfg.dt, 
         a=1.0,
         d=1.0,
         noise_std=cfg.noise_std
-    )
+      )    
+    elif cfg.type=="ks3d":
+      
+      out_dim = 1
+      
+      gt, obs, times = generate_ks3d_da_data(
+        spatial_res=cfg.res, 
+        time_steps=cfg.time_steps,
+        noise_std=cfg.noise_std
+      )
+
+  
     
     # Split into Train and Calibration
     num_samples = gt.shape[0]
-    idx = jax.random.permutation(jax.random.PRNGKey(cfg.seed), num_samples)
-    train_idx, cal_idx = idx[:num_samples//2], idx[num_samples//2:]
+    idx = jax.random.permutation(jax.random.PRNGKey(cfg.seed), num_samples-2)
+    idx = idx[idx%2!=0]
+    train_idx, cal_idx = idx[:num_samples//4], idx[num_samples//4:-2]
 
     # --- Architecture ---
     unet = UNet3d(
-        out_channels=4,
+        out_channels=out_dim,
         time_cond=True,
         num_channels=cfg.model.num_channels,
         use_spatial_attention=cfg.model.use_spatial_attention,
@@ -216,7 +235,7 @@ def main(_):
     trainers_dict = {}
     
     for alpha, n_ens in product(cfg.alpha_list, cfg.n_ens_list):
-      # Create a unique path for this specific experiment
+      # Create a unique path
       experiment_dir = os.path.join(workdir_root, f"alpha_{alpha}_nens_{n_ens}")
       os.makedirs(experiment_dir, exist_ok=True)
       
@@ -224,17 +243,27 @@ def main(_):
       for label, tau in quantiles.items():
           print(f"--- Training {label} quantile (tau={tau}) ---")
           
-          # Unique workdir for each quantile to avoid checkpoint collision
+          # Unique workdir for each quantile
           q_workdir = os.path.join(experiment_dir, label)
           
           da_model = QuantileEnsembleDAModel(
               model=unet,
-              input_shape=(cfg.batch_size, cfg.res, cfg.res, cfg.res, 4),
+              input_shape=(cfg.batch_size, cfg.res, cfg.res, cfg.res, out_dim),
               n_ens=n_ens,
               tau=tau
           )
 
-          tx = optax.adamw(learning_rate=cfg.learning_rate)
+          if cfg.optimizer=="adamw":
+            tx = optax.adamw(learning_rate=cfg.learning_rate)
+          elif cfg.optimizer=="asgld":
+            tx = asgld(learning_rate=cfg.learning_rate, tau = cfg.optim_noise, mu_dtype=jnp.bfloat16)
+          elif cfg.optimizer=="adamsgld":
+            tx = adam_sgld(learning_rate=cfg.learning_rate)
+          elif cfg.optimizer=="adamwnoise":
+            tx = optax.chain(
+                optax.adamw(learning_rate=cfg.learning_rate,weight_decay=0.0),
+                add_langevin_noise(learning_rate=cfg.learning_rate,seed=123)
+                )
           trainer = BeltramiTrainer(model=da_model, optimizer=tx, rng=jax.random.PRNGKey(cfg.seed))
 
           ckpt_options = ocp.CheckpointManagerOptions(
@@ -248,13 +277,13 @@ def main(_):
           ]
 
           run(
-              train_dataloader=beltrami_da_dataloader(
-                  gt[train_idx], obs[train_idx], times, batch_size=cfg.batch_size, mode="train"
+              train_dataloader=da_dataloader(
+                  train_idx, gt, obs, times, batch_size=cfg.batch_size, mode="train"
               ),
               trainer=trainer,
               workdir=q_workdir,
               total_train_steps=cfg.total_train_steps,
-              metric_aggregation_steps=500,
+              metric_aggregation_steps=50,
               callbacks=callbacks
           )
           trainers_dict[label] = trainer
@@ -267,7 +296,7 @@ def main(_):
       # 1. Get raw ensemble predictions
       y_reps_lo = get_predictions(trainers_dict["lo"], obs[cal_idx], times)
       y_reps_hi = get_predictions(trainers_dict["hi"], obs[cal_idx], times)
-      y_true = gt[cal_idx] # [N_cal, res, res, res, 4]
+      y_true = gt[cal_idx+2] # [N_cal, res, res, res, 4]
 
       # Step 4: Per-function, per-replicate residuals
       # r = max(q_lo - u, u - q_hi)

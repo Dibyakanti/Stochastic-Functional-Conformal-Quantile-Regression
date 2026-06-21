@@ -1,8 +1,8 @@
 #!/bin/bash --login
 
-#SBATCH -p gpuL
+#SBATCH -p gpuA
 #SBATCH --gpus=1
-#SBATCH -t 0-5
+#SBATCH -t 0-2
 #SBATCH --output=./outputs/slurm/ks3d-%j.out
 
 module purge

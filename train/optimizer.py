@@ -1,4 +1,4 @@
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import jax
 import jax.numpy as jnp
@@ -62,7 +62,8 @@ class ASGLDState(NamedTuple):
     m: optax.Updates
     v: optax.Updates
     rng_key: jax.Array
-    
+
+
 def asgld(
     learning_rate,
     beta1=0.9,
@@ -70,76 +71,47 @@ def asgld(
     a=1.0,
     tau=1.0,
     eps=1e-8,
+    seed=0,
+    mu_dtype: Optional[jnp.dtype] = None,
 ):
+    mu_dtype = jax.dtypes.canonicalize_dtype(mu_dtype) if mu_dtype is not None else None
+
     def init_fn(params):
+        m_dtype = mu_dtype if mu_dtype is not None else None
         return ASGLDState(
             count=jnp.zeros([], jnp.int32),
-            m=jax.tree.map(jnp.zeros_like, params),
+            m=jax.tree.map(lambda t: jnp.zeros_like(t, dtype=m_dtype), params),
             v=jax.tree.map(jnp.zeros_like, params),
-            rng_key=jax.random.PRNGKey(0),
+            rng_key=jax.random.PRNGKey(seed),
         )
 
     def update_fn(grads, state, params=None):
         del params
 
-        m = jax.tree.map(
-            lambda m, g: beta1 * m + (1.0 - beta1) * g,
-            state.m,
-            grads,
-        )
+        lr = learning_rate if callable(learning_rate) is False else learning_rate(state.count)
 
-        v = jax.tree.map(
-            lambda v, g: beta2 * v + (1.0 - beta2) * g**2,
-            state.v,
-            grads,
-        )
-
-        lr = learning_rate
-
-        drift = jax.tree.map(
-            lambda g, m_, v_: (
-                -lr * (
-                    g
-                    + a * m_ / jnp.sqrt(v_ + eps)
-                )
-            ),
-            grads,
-            m,
-            v,
-        )
+        m = jax.tree.map(lambda m_, g: beta1 * m_ + (1.0 - beta1) * g, state.m, grads)
+        v = jax.tree.map(lambda v_, g: beta2 * v_ + (1.0 - beta2) * g * g, state.v, grads)
 
         key, subkey = jax.random.split(state.rng_key)
+        leaves, treedef = jax.tree.flatten(grads)
+        keys = jax.random.split(subkey, num=len(leaves))
 
-        leaves, treedef = jax.tree.flatten(drift)
-        keys = jax.random.split(subkey, len(leaves))
+        noise_scale = jnp.sqrt(2.0 * tau * lr)
+        m_leaves = jax.tree.leaves(m)
+        v_leaves = jax.tree.leaves(v)
 
-        noise_leaves = [
-            jnp.sqrt(2.0 * tau * lr)
-            * jax.random.normal(k, x.shape, x.dtype)
-            for k, x in zip(keys, leaves)
+        update_leaves = [
+            -lr * (g + a * m_ * jax.lax.rsqrt(v_ + eps))
+            + noise_scale * jax.random.normal(k, g.shape, g.dtype)
+            for g, m_, v_, k in zip(leaves, m_leaves, v_leaves, keys)
         ]
+        updates = jax.tree.unflatten(treedef, update_leaves)
 
-        noise = jax.tree.unflatten(treedef, noise_leaves)
-
-        updates = jax.tree.map(
-            lambda d, n: d + n,
-            drift,
-            noise,
-        )
-
-        new_state = ASGLDState(
-            count=state.count + 1,
-            m=m,
-            v=v,
-            rng_key=key,
-        )
-
+        new_state = ASGLDState(count=state.count + 1, m=m, v=v, rng_key=key)
         return updates, new_state
 
-    return optax.GradientTransformation(
-        init_fn,
-        update_fn,
-    )
+    return optax.GradientTransformation(init_fn, update_fn)
 
 
 class SgldAdamState(NamedTuple):

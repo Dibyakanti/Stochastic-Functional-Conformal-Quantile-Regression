@@ -60,7 +60,7 @@ def beltrami_snapshot(t, grid_x, grid_y, grid_z, a, d):
     # Stack channels at the end: Shape (X, Y, Z, 4) -> [u, v, w, p]
     return jnp.stack([u, v, w, p], axis=-1)
 
-def generate_da_data(
+def generate_beltrami_da_data(
     spatial_res=32, 
     time_steps=50, 
     dt=0.01, 

@@ -7,3 +7,5 @@ outputs/*
 outputs/slurm/
 beltrami_experiment*/
 */__pycache__/*
+results/
+singularity/

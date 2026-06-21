@@ -22,8 +22,8 @@ from vape4d.utils import diverging_alpha
 from model.unet3d import UNet3d
 from train.models import QuantileEnsembleDAModel  # Use the Ensemble Model
 from train.trainers import BeltramiTrainer
-# from data.beltramiDataGeneration import generate_da_data
-from data.ks3dDataGeneration import generate_da_data
+from data.beltramiDataGeneration import *
+from data.ks3dDataGeneration import *
 from utils.plot_utils import plot_line
 
 from train.optimizer import *
@@ -44,7 +44,7 @@ def get_ensemble_mean_pred(trainer, obs, dt_input):
     
     # If only 1 ensemble member, skip vmap entirely
     if trainer.model.n_ens == 1:
-        # params has a leading batch dim of 1 — squeeze it out
+        # params has a leading batch dim of 1
         params = jax.tree_util.tree_map(lambda x: x[0], variables["params"])
         return trainer.model.model.apply(
             {"params": params}, obs, time=dt_input, is_training=False
@@ -93,11 +93,11 @@ def _draw_scatter_cube(ax, vol, norm, cmap):
     ax.set_box_aspect([1, 1, 1])
     ax.set_axis_off()
     ax.view_init(elev=22, azim=35)
- 
+
  
 # ── per-timestep figure ───────────────────────────────────────────────────────
  
-def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
+def plot_interval_cubes(t, n_fields, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
     """
     lo_vol, hi_vol, gt_vol : list of 4 arrays, each (res, res, res).
  
@@ -107,7 +107,6 @@ def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
     Row 1  upper bound  │ u_hi  v_hi  w_hi  p_hi │  ← single colorbar
     Row 2  ground truth │ u_gt  v_gt  w_gt  p_gt │
     """
-    n_fields   = 1
     row_labels = ["lower bound", "upper bound", "ground truth"]
     row_colors = ["#3b82f6", "#ef4444", "#16a34a"]
  
@@ -157,7 +156,7 @@ def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
                  fontweight="bold", color=color, rotation=90)
  
     fig.suptitle(
-        f"Beltrami conformal prediction intervals  ·  "
+        f"Conformal prediction intervals  ·  "
         f"α={alpha}  s={n_ens}  t={t}",
         fontsize=10, fontweight="500", y=0.97
     )
@@ -170,152 +169,19 @@ def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
     fig.savefig(fname, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {fname}")
-
-# # ── vape4d volume render ──────────────────────────────────────────────────────
- 
-# def _render_volume(vol, vmin, vmax, cmap_base="RdBu_r"):
-#     """
-#     Render a single (res, res, res) volume with vape4d.
-#     Values are normalised to [0,1] using the global vmin/vmax so that
-#     the colour scale is identical across all panels and timesteps.
-#     Returns (H, W, 4) uint8 RGBA.
-#     """
-#     vol_norm = (vol.astype(np.float32) - vmin) / (vmax - vmin + 1e-8)
-#     vol_norm = np.clip(vol_norm, 0.0, 1.0)
-#     data     = vol_norm[np.newaxis]   # (1, res, res, res)  [T,D,H,W]
-#     colormap = diverging_alpha(mpl.colormaps[cmap_base])
-#     return render(data, colormap, width=RENDER_W, height=RENDER_H)
- 
- 
-# # ── per-timestep figure ───────────────────────────────────────────────────────
-
-# def plot_interval_cubes(t, lo_vol, hi_vol, gt_vol,
-#                         vmin_global, vmax_global, norm,
-#                         folder, alpha, n_ens, lr):
-#     """
-#     Render and save one PNG for timestep t.
- 
-#     lo_vol, hi_vol, gt_vol : list of 4 arrays, each (res, res, res).
-#     vmin_global, vmax_global, norm : shared colour scale (pre-computed outside).
- 
-#     Layout  (3 rows x 4 fields + 1 shared colorbar)
-#     ────────────────────────────────────────────────
-#     Row 0  lower bound  │ u_lo  v_lo  w_lo  p_lo │
-#     Row 1  upper bound  │ u_hi  v_hi  w_hi  p_hi │  ← single colorbar
-#     Row 2  ground truth │ u_gt  v_gt  w_gt  p_gt │
-#     """
-#     row_labels = ["lower bound", "upper bound", "ground truth"]
-#     row_colors = ["#3b82f6", "#ef4444", "#16a34a"]
-#     all_rows   = [lo_vol, hi_vol, gt_vol]
- 
-#     # render all 12 volumes
-#     rendered = [
-#         [_render_volume(vol, vmin_global, vmax_global) for vol in row_vols]
-#         for row_vols in all_rows
-#     ]
- 
-#     width_ratios = [6] * 4 + [0.45]
-#     fig = plt.figure(figsize=(17, 9), facecolor="white")
-#     gs  = gridspec.GridSpec(3, 5,
-#                             width_ratios=width_ratios,
-#                             wspace=0.02, hspace=0.06,
-#                             left=0.06, right=0.97,
-#                             top=0.92, bottom=0.02)
- 
-#     for row in range(3):
-#         for f in range(4):
-#             ax = fig.add_subplot(gs[row, f])
-#             ax.imshow(rendered[row][f])
-#             ax.set_axis_off()
-#             ax.set_title(
-#                 f"{FIELD_NAMES[f]}  {['lower','upper','truth'][row]}",
-#                 fontsize=8, pad=2,
-#                 color=row_colors[row], fontweight="500"
-#             )
- 
-#     # single shared colorbar
-#     cax = fig.add_subplot(gs[:, 4])
-#     cb  = fig.colorbar(ScalarMappable(norm=norm, cmap=mpl.colormaps["RdBu_r"]),
-#                        cax=cax, orientation="vertical")
-#     cb.ax.tick_params(labelsize=7)
-#     cb.set_label("field value", fontsize=8, labelpad=4)
- 
-#     for row, (label, color) in enumerate(zip(row_labels, row_colors)):
-#         fig.text(0.005, 0.87 - row * 0.295, label,
-#                  va="center", ha="left", fontsize=9,
-#                  fontweight="bold", color=color, rotation=90)
- 
-#     fig.suptitle(
-#         f"Beltrami conformal prediction intervals  ·  "
-#         f"α={alpha}  s={n_ens}  t={t}",
-#         fontsize=10, fontweight="500", y=0.97
-#     )
- 
-#     os.makedirs(folder, exist_ok=True)
-#     lr_str = str(lr).replace(".", "p")
-#     fname  = os.path.join(
-#         folder, f"cubes_alpha{alpha}_nens{n_ens}_lr{lr_str}_t{t:03d}.png"
-#     )
-#     fig.savefig(fname, dpi=DPI, bbox_inches="tight")
-#     plt.close(fig)
-#     print(f"  saved {fname}")
-#     return fname
-
- 
-# ── video ─────────────────────────────────────────────────────────────────────
- 
-# def _natural_sort_key(s):
-#     return [int(c) if c.isdigit() else c.lower() for c in re.split(r"(\d+)", s)]
- 
- 
-# def make_video(png_paths, output_path, fps=VIDEO_FPS):
-#     """Stitch a list of PNG paths (in order) into an MP4 via FFMpegWriter."""
-#     if not png_paths:
-#         print("  No frames to encode — skipping video.")
-#         return
- 
-#     img0  = np.array(Image.open(png_paths[0]))
-#     h, w  = img0.shape[:2]
-#     fig, ax = plt.subplots(figsize=(w / 100, h / 100), facecolor="white")
-#     ax.axis("off")
-#     fig.subplots_adjust(0, 0, 1, 1)
- 
-#     im  = ax.imshow(img0)
-#     txt = ax.text(0.01, 0.99, "", transform=ax.transAxes,
-#                   fontsize=9, va="top", ha="left", color="white",
-#                   bbox=dict(boxstyle="round,pad=0.2", fc="black", alpha=0.4))
- 
-#     def update(i):
-#         img = np.array(Image.open(png_paths[i]))
-#         im.set_data(img)
-#         txt.set_text(f"t = {i:03d} / {len(png_paths)-1:03d}")
-#         return im, txt
- 
-#     ani = animation.FuncAnimation(
-#         fig, update,
-#         frames=len(png_paths),
-#         interval=1000 / fps,
-#         blit=True
-#     )
- 
-#     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
- 
-#     writer = animation.FFMpegWriter(
-#         fps=fps,
-#         codec="libx264",
-#         extra_args=["-pix_fmt", "yuv420p", "-crf", "18"]
-#     )
-#     print(f"  encoding {len(png_paths)} frames → {output_path}")
-#     ani.save(output_path, writer=writer, dpi=100)
-#     plt.close(fig)
-#     print(f"  video saved.")
+    
 
 def run_analysis(cfg):
     workdir_root = os.path.abspath(cfg.workdir)
     
+    if cfg.type=="beltrami":
+        out_dim = 4
+    elif cfg.type=="ks3d":
+        out_dim = 1
+    
     # Define UNet outside the loops for efficiency
     unet = UNet3d(
-        out_channels=1,
+        out_channels=out_dim,
         time_cond=True,
         num_channels=cfg.model.num_channels,
         use_spatial_attention=cfg.model.use_spatial_attention,
@@ -348,7 +214,7 @@ def run_analysis(cfg):
             q_dir = os.path.join(experiment_dir, label)
             da_model = QuantileEnsembleDAModel(
                 model=unet,
-                input_shape=(cfg.batch_size, cfg.res, cfg.res, cfg.res, 1),
+                input_shape=(cfg.batch_size, cfg.res, cfg.res, cfg.res, out_dim),
                 n_ens=current_n_ens,
                 tau=tau
             )
@@ -383,13 +249,23 @@ def run_analysis(cfg):
         trainer_lo = restore_trainer("lo", tau_lo, n_ens)
         trainer_hi = restore_trainer("hi", tau_hi, n_ens)
 
-        # 3. Data Generation & Unrolling
-        gt, obs, times = generate_da_data(
-            spatial_res=cfg.res, 
-            time_steps=100, 
-            # dt=cfg.dt,
-            noise_std=cfg.noise_std
-        )
+        if cfg.type=="beltrami":
+            
+            gt, obs, coords, times = generate_beltrami_da_data(
+                spatial_res=cfg.res, 
+                time_steps=cfg.time_steps,
+                dt=cfg.dt, 
+                a=1.0,
+                d=1.0,
+                noise_std=cfg.noise_std
+            )    
+        elif cfg.type=="ks3d":
+            
+            gt, obs, times = generate_ks3d_da_data(
+                spatial_res=cfg.res, 
+                time_steps=cfg.time_steps,
+                noise_std=cfg.noise_std
+            )
         
         start_idx = 2
         all_preds_lo, all_preds_hi, actual_truth = [], [], []
@@ -405,7 +281,7 @@ def run_analysis(cfg):
 
             all_preds_lo.append(p_lo - Q_p)
             all_preds_hi.append(p_hi + Q_p)
-            actual_truth.append(gt[start_idx + + (2*i) + 2])
+            actual_truth.append(gt[start_idx + (2*i) + 2])
 
         # 4. Coverage Calculation
         preds_lo = jnp.concatenate(all_preds_lo, axis=0)
@@ -413,24 +289,26 @@ def run_analysis(cfg):
         truth = jnp.stack(actual_truth)
         
         # ── cube scatter plots ────────────────────────────────────────────────
-        cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
-        n_time   = truth.shape[0]
+        # cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
+        # n_time   = truth.shape[0]
  
-        for t in range(n_time):
-            lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(1)]
-            hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(1)]
-            gt_vol = [np.array(truth[t, ..., f]) for f in range(1)]
+        # for t in range(n_time):
+        #     lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(out_dim)]
+        #     hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(out_dim)]
+        #     gt_vol = [np.array(truth[t, ..., f]) for f in range(out_dim)]
  
-            plot_interval_cubes(
-                t=(2*t)+2,
-                lo_vol=lo_vol,
-                hi_vol=hi_vol,
-                gt_vol=gt_vol,
-                folder=cube_dir,
-                alpha=alpha,
-                n_ens=n_ens,
-                lr=cfg.learning_rate,
-            )
+        #     plot_interval_cubes(
+        #         t=(2*t)+2,
+        #         n_fields=out_dim,
+        #         lo_vol=lo_vol,
+        #         hi_vol=hi_vol,
+        #         gt_vol=gt_vol,
+        #         folder=cube_dir,
+        #         alpha=alpha,
+        #         n_ens=n_ens,
+        #         lr=cfg.learning_rate,
+        #     )
+        
         
         # ── compute ONE global colour scale for this (alpha, n_ens) run ───────
         # all_vals    = np.concatenate([
@@ -488,12 +366,17 @@ def run_analysis(cfg):
         interval_size_list.append(avg_interval_sizes)
 
         is_covered = (truth >= preds_lo) & (truth <= preds_hi)
-        coverage = jnp.mean(is_covered, axis=(0, 1, 2, 3))
-        
+        if cfg.type=="betrami":
+            coverage = jnp.mean(is_covered, axis=(0, 1, 2, 3))
+        elif cfg.type=="ks3d":
+            coverage = jnp.mean(is_covered, axis=(0))
+            
         interval_widths = preds_hi - preds_lo
         
-        avg_interval_sizes = jnp.mean(interval_widths, axis=(0, 1, 2, 3))
-        
+        if cfg.type=="betrami":
+            avg_interval_sizes = jnp.mean(interval_widths, axis=(0, 1, 2, 3))
+        elif cfg.type=="ks3d":
+            avg_interval_sizes = jnp.mean(interval_widths, axis=(0))
     
         coverage_list.append(coverage)
         s_hmap_list.append(n_ens)
@@ -506,8 +389,7 @@ def run_analysis(cfg):
     alpha_vals = np.array(alpha_hmap_list)
     target_coverage = 1.0 - alpha_vals
 
-    # channel_names = ['u', 'v', 'w', 'p']
-    channel_names = ['u']
+    channel_names = ['u', 'v', 'w', 'p'] if cfg.type=="beltrami" else ['u']
     lr_suffix = f"lr{cfg.learning_rate}"
     folder_name = os.path.join(workdir_root, "analysis_plots")
     os.makedirs(folder_name, exist_ok=True)
