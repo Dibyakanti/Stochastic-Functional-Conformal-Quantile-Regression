@@ -291,7 +291,7 @@ def main(_):
       # --- Calibration Implementation ---
       m_points = cfg.res**3  # Total spatial points
 
-      # --- Following Algorithm Steps 4-6 (Per-Channel) ---
+      # --- Following Algorithm Steps (Per-Channel) ---
 
       # 1. Get raw ensemble predictions
       y_reps_lo = get_predictions(trainers_dict["lo"], obs[cal_idx], times)

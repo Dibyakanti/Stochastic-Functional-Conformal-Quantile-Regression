@@ -1,9 +1,16 @@
 import os
+
+os.environ["PYVISTA_OFF_SCREEN"] = "true"
+os.environ["VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN"] = "1"
+os.environ["MPLBACKEND"] = "Agg"
+
 import sys
 import pickle
 import numpy as np
 import jax
 import jax.numpy as jnp
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
@@ -27,6 +34,10 @@ from utils.plot_utils import plot_line
 from train.optimizer import *
 
 # os.environ["JAX_PLATFORM_NAME"] = "cpu"
+
+# Set pyvista environment
+os.environ["PYVISTA_OFF_SCREEN"] = "true"
+pv.OFF_SCREEN = True
 
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", "configs/config.py")
@@ -53,6 +64,7 @@ def get_ensemble_mean_pred(trainer, obs, dt_input):
 
 FIELD_NAMES = ["u", "v", "w", "p"]
 CMAP        = "RdBu_r"
+CMAP        = "coolwarm"
 DPI         = 100
 MARKER_SIZE = 14   # scatter dot size — increase for coarser grids
 
@@ -63,111 +75,172 @@ MARKER_SIZE = 14   # scatter dot size — increase for coarser grids
 # VIDEO_FPS    = 4        # frames per second in output MP4
 
 
-# ── 3-D scatter cube ──────────────────────────────────────────────────────────
- 
-def _draw_scatter_cube(ax, vol, norm, cmap):
-    """
-    Render vol (res, res, res) as a 3-D scatter plot.
-    Each grid point is a dot coloured by its scalar value.
-    """
-    res = vol.shape[0]
-    xi, yi, zi = np.meshgrid(
-        np.arange(res), np.arange(res), np.arange(res), indexing="ij"
-    )
-    colors = mpl.cm.get_cmap(cmap)(norm(vol.ravel()))
- 
-    ax.scatter(
-        xi.ravel(), yi.ravel(), zi.ravel(),
-        c=colors,
-        s=MARKER_SIZE,
-        marker="o",
-        linewidths=0,
-        depthshade=True,
-    )
- 
-    ax.set_xlim(0, res - 1)
-    ax.set_ylim(0, res - 1)
-    ax.set_zlim(0, res - 1)
-    ax.set_box_aspect([1, 1, 1])
-    ax.set_axis_off()
-    ax.view_init(elev=22, azim=35)
+# ── PyVista 3-D volume cube ───────────────────────────────────────────────────
 
- 
-# ── per-timestep figure ───────────────────────────────────────────────────────
- 
+def _add_pyvista_volume(plotter, row, col, vol, clim, cmap, title):
+    """
+    Render vol (res, res, res) as a cleaner PyVista volume in the given subplot.
+    """
+    vol = np.asarray(vol)
+
+    volume = pv.wrap(vol)
+
+    plotter.subplot(row, col)
+
+    # Cleaner volume appearance:
+    # - shade=False avoids grey muddy lighting
+    # - custom opacity makes near-zero values more transparent
+    # - stronger absolute values become more visible
+    plotter.add_volume(
+        volume,
+        cmap=cmap,
+        opacity=[0.70, 0.35, 0.04, 0.35, 0.70],
+        clim=clim,
+        shade=False,
+        show_scalar_bar=False,
+    )
+
+    # Add a subtle box so the cube boundary is clearer
+    plotter.add_bounding_box(
+        color="black",
+        line_width=1,
+        opacity=0.25,
+    )
+
+    # Put title near top-left of each subplot, small and non-overlapping
+    txt = plotter.add_text(
+        title,
+        position=(0.04, 0.92),
+        viewport=True,
+        font_size=8,
+        color="#222222",
+    )
+
+    # Make text less harsh
+    try:
+        txt.GetTextProperty().SetBold(False)
+        txt.GetTextProperty().SetShadow(False)
+    except Exception:
+        pass
+
+    plotter.camera_position = "iso"
+
+    # Zoom OUT slightly to leave room for the title
+    plotter.camera.zoom(0.82)
+    
+# ── per-timestep PyVista volume figure ────────────────────────────────────────
+
 def plot_interval_cubes(t, n_fields, lo_vol, hi_vol, gt_vol, folder, alpha, n_ens, lr):
     """
-    lo_vol, hi_vol, gt_vol : list of 4 arrays, each (res, res, res).
- 
-    Layout  (3 rows x 4 fields + ONE shared colorbar on the far right)
-    ───────────────────────────────────────────────────────────────────
-    Row 0  lower bound  │ u_lo  v_lo  w_lo  p_lo │
-    Row 1  upper bound  │ u_hi  v_hi  w_hi  p_hi │  ← single colorbar
-    Row 2  ground truth │ u_gt  v_gt  w_gt  p_gt │
+    lo_vol, hi_vol, gt_vol : list of arrays, each (res, res, res).
+
+    Layout:
+        Row 0: lower bound
+        Row 1: upper bound
+        Row 2: ground truth
+
+        Columns:
+            u, v, w, p for Beltrami
+            u only for KS3D
     """
+
     row_labels = ["lower bound", "upper bound", "ground truth"]
-    row_colors = ["#3b82f6", "#ef4444", "#16a34a"]
- 
-    # One global symmetric colour scale across ALL fields and rows
+    row_names_for_title = ["lower", "upper", "truth"]
+
+    # Global symmetric colour scale across all rows and fields.
+    # This keeps the colours comparable between lower, upper and ground truth.
     all_vals = np.concatenate(
-        [v.ravel() for v in lo_vol + hi_vol + gt_vol]
+        [np.asarray(v).ravel() for v in lo_vol + hi_vol + gt_vol]
     )
+
     vmax = float(np.max(np.abs(all_vals)))
-    norm = Normalize(vmin=-vmax, vmax=vmax)
-    cmap = mpl.colormaps[CMAP]
- 
-    # GridSpec: 4 cube columns + 1 thin colorbar column
-    width_ratios = [6] * n_fields + [0.5]
-    fig = plt.figure(figsize=(16, 9), facecolor="white")
-    gs  = gridspec.GridSpec(3, n_fields + 1,
-                            width_ratios=width_ratios,
-                            wspace=0.02, hspace=0.05,
-                            left=0.06, right=0.97,
-                            top=0.92, bottom=0.02)
- 
-    for f in range(n_fields):
-        vols      = [lo_vol[f], hi_vol[f], gt_vol[f]]
-        subtitles = [
-            f"{FIELD_NAMES[f]}  lower",
-            f"{FIELD_NAMES[f]}  upper",
-            f"{FIELD_NAMES[f]}  truth",
-        ]
-        for row in range(3):
-            ax = fig.add_subplot(gs[row, f], projection="3d")
-            _draw_scatter_cube(ax, vols[row], norm, cmap)
-            ax.set_title(subtitles[row],
-                         fontsize=8, pad=1,
-                         color=row_colors[row], fontweight="500")
- 
-    # single shared colorbar on the far right, spanning all rows
-    cax = fig.add_subplot(gs[:, n_fields])
-    cb  = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
-                       cax=cax, orientation="vertical")
-    cb.ax.tick_params(labelsize=7)
-    cb.set_label("field value", fontsize=8, labelpad=4)
- 
-    # rotated row labels on left margin
-    for row, (label, color) in enumerate(zip(row_labels, row_colors)):
-        y_pos = 0.87 - row * 0.295
-        fig.text(0.005, y_pos, label,
-                 va="center", ha="left", fontsize=9,
-                 fontweight="bold", color=color, rotation=90)
- 
-    fig.suptitle(
-        f"Conformal prediction intervals  ·  "
-        f"α={alpha}  s={n_ens}  t={t}",
-        fontsize=10, fontweight="500", y=0.97
-    )
- 
+
+    # Avoid zero-width colour range if the volume is constant/zero
+    if vmax == 0.0:
+        vmax = 1.0
+
+    clim = [-vmax, vmax]
+
     os.makedirs(folder, exist_ok=True)
     lr_str = str(lr).replace(".", "p")
-    fname  = os.path.join(
+    fname = os.path.join(
         folder, f"cubes_alpha{alpha}_nens{n_ens}_lr{lr_str}_t{t:03d}.png"
     )
-    fig.savefig(fname, dpi=DPI, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {fname}")
+
+    # Window size roughly replaces the old Matplotlib figsize.
+    # Increase these numbers if you want higher-resolution images.
+    window_width = max(1200, 360 * n_fields)
+    window_height = 900
+
     
+    plotter = pv.Plotter(
+        off_screen=True,
+        shape=(3, n_fields),
+        window_size=(window_width, window_height),
+        border=False,
+    )
+
+    # Optional: white background, matching your old Matplotlib figure
+    plotter.set_background("white")
+
+    for f in range(n_fields):
+        vols = [lo_vol[f], hi_vol[f], gt_vol[f]]
+
+        for row in range(3):
+            field_name = FIELD_NAMES[f] if f < len(FIELD_NAMES) else f"field {f}"
+
+            if f == 0:
+                title = f"{row_labels[row]}  ·  {field_name} {row_names_for_title[row]}"
+            else:
+                title = f"{field_name} {row_names_for_title[row]}"
+
+            _add_pyvista_volume(
+                plotter=plotter,
+                row=row,
+                col=f,
+                vol=vols[row],
+                clim=clim,
+                cmap=CMAP,
+                title=title,
+            )
+
+    # Add one scalar bar for the whole plot.
+    # Since every volume uses the same clim and cmap, this scalar bar applies globally.
+    plotter.add_scalar_bar(
+        title="field value",
+        vertical=True,
+        position_x=0.91,
+        position_y=0.18,
+        width=0.04,
+        height=0.65,
+        title_font_size=12,
+        label_font_size=10,
+        color="black",
+    )
+
+    # Add global title.
+    plotter.add_text(
+        f"Conformal prediction intervals  ·  α={alpha}  s={n_ens}  t={t}",
+        position="upper_left",
+        font_size=12,
+        color="black",
+    )
+
+    
+    # plotter.render()
+    # plotter.screenshot(fname)
+    # plotter.close()
+    
+    
+    try:
+        plotter.show(screenshot=fname, auto_close=True)
+    finally:
+        plotter.close()
+
+
+
+    print(f"  saved {fname}")
+
 
 def run_analysis(cfg):
     workdir_root = os.path.abspath(cfg.workdir)
@@ -204,6 +277,7 @@ def run_analysis(cfg):
             continue
             
         Q_p = jnp.load(calib_path)
+        print(Q_p)
         tau_lo = alpha / 2
         tau_hi = 1 - (alpha / 2)
 
@@ -286,32 +360,32 @@ def run_analysis(cfg):
         preds_hi = jnp.concatenate(all_preds_hi, axis=0)
         truth = jnp.stack(actual_truth)
         
-        # ── cube scatter plots ────────────────────────────────────────────────
-        cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
-        n_time   = truth.shape[0]
+        # # ── cube scatter plots ────────────────────────────────────────────────
+        # cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
+        # n_time   = truth.shape[0]
  
-        for t in range(n_time):
-            lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(out_dim)]
-            hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(out_dim)]
-            gt_vol = [np.array(truth[t, ..., f]) for f in range(out_dim)]
+        # for t in range(n_time):
+        #     lo_vol = [np.array(preds_lo[t, ..., f]) for f in range(out_dim)]
+        #     hi_vol = [np.array(preds_hi[t, ..., f]) for f in range(out_dim)]
+        #     gt_vol = [np.array(truth[t, ..., f]) for f in range(out_dim)]
  
-            plot_interval_cubes(
-                t=(2*t)+2,
-                n_fields=out_dim,
-                lo_vol=lo_vol,
-                hi_vol=hi_vol,
-                gt_vol=gt_vol,
-                folder=cube_dir,
-                alpha=alpha,
-                n_ens=n_ens,
-                lr=cfg.learning_rate,
-            )
+        #     plot_interval_cubes(
+        #         t=(2*t)+2,
+        #         n_fields=out_dim,
+        #         lo_vol=lo_vol,
+        #         hi_vol=hi_vol,
+        #         gt_vol=gt_vol,
+        #         folder=cube_dir,
+        #         alpha=alpha,
+        #         n_ens=n_ens,
+        #         lr=cfg.learning_rate,
+        #     )
  
         # ── scalar metrics ────────────────────────────────────────────────────
         is_covered         = (truth >= preds_lo) & (truth <= preds_hi)
-        coverage           = jnp.mean(is_covered, axis=(0, 1, 2, 3))
+        # coverage           = jnp.mean(is_covered, axis=(0, 1, 2, 3))
         interval_widths    = preds_hi - preds_lo
-        avg_interval_sizes = jnp.mean(interval_widths, axis=(0, 1, 2, 3))
+        # avg_interval_sizes = jnp.mean(interval_widths, axis=(0, 1, 2, 3))
  
         coverage_list.append(coverage)
         s_hmap_list.append(n_ens)
@@ -319,14 +393,14 @@ def run_analysis(cfg):
         interval_size_list.append(avg_interval_sizes)
 
         is_covered = (truth >= preds_lo) & (truth <= preds_hi)
-        if cfg.type=="betrami":
+        if cfg.type=="beltrami":
             coverage = jnp.mean(is_covered, axis=(0, 1, 2, 3))
         elif cfg.type=="ks3d":
             coverage = jnp.mean(is_covered, axis=(0))
             
         interval_widths = preds_hi - preds_lo
         
-        if cfg.type=="betrami":
+        if cfg.type=="beltrami":
             avg_interval_sizes = jnp.mean(interval_widths, axis=(0, 1, 2, 3))
         elif cfg.type=="ks3d":
             avg_interval_sizes = jnp.mean(interval_widths, axis=(0))

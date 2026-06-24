@@ -7,5 +7,7 @@ outputs/*
 outputs/slurm/
 beltrami_experiment*/
 */__pycache__/*
-results/
+results/*/alpha*
+results/*/analysis_plots/cubes/
+results/old/
 singularity/
