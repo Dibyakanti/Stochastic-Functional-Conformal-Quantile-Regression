@@ -383,26 +383,14 @@ def run_analysis(cfg):
  
         # ── scalar metrics ────────────────────────────────────────────────────
         is_covered         = (truth >= preds_lo) & (truth <= preds_hi)
-        # coverage           = jnp.mean(is_covered, axis=(0, 1, 2, 3))
         interval_widths    = preds_hi - preds_lo
-        # avg_interval_sizes = jnp.mean(interval_widths, axis=(0, 1, 2, 3))
  
-        coverage_list.append(coverage)
-        s_hmap_list.append(n_ens)
-        alpha_hmap_list.append(alpha)
-        interval_size_list.append(avg_interval_sizes)
-
         is_covered = (truth >= preds_lo) & (truth <= preds_hi)
         if cfg.type=="beltrami":
             coverage = jnp.mean(is_covered, axis=(0, 1, 2, 3))
-        elif cfg.type=="ks3d":
-            coverage = jnp.mean(is_covered, axis=(0))
-            
-        interval_widths = preds_hi - preds_lo
-        
-        if cfg.type=="beltrami":
             avg_interval_sizes = jnp.mean(interval_widths, axis=(0, 1, 2, 3))
         elif cfg.type=="ks3d":
+            coverage = jnp.mean(is_covered, axis=(0))
             avg_interval_sizes = jnp.mean(interval_widths, axis=(0))
     
         coverage_list.append(coverage)
