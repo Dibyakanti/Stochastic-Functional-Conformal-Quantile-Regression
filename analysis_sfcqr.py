@@ -62,6 +62,27 @@ def get_ensemble_mean_pred(trainer, obs, dt_input):
     ensemble_preds = jax.vmap(single_apply)(variables["params"])
     return jnp.mean(ensemble_preds, axis=0)
 
+def get_ensemble_random_pred(trainer, obs, dt_input, key):
+    variables = trainer.train_state.model_variables
+
+    def single_apply(p):
+        return trainer.model.model.apply(
+            {"params": p}, obs, time=dt_input, is_training=False
+        )
+
+    # If only 1 ensemble member, skip vmap entirely (nothing to randomize over)
+    if trainer.model.n_ens == 1:
+        # params has a leading batch dim of 1
+        params = jax.tree_util.tree_map(lambda x: x[0], variables["params"])
+        return trainer.model.model.apply(
+            {"params": params}, obs, time=dt_input, is_training=False
+        )
+
+    ensemble_preds = jax.vmap(single_apply)(variables["params"])
+    # Randomly select one ensemble member's prediction instead of averaging
+    # rand_idx = jax.random.randint(key, shape=(), minval=0, maxval=trainer.model.n_ens)
+    return ensemble_preds
+
 FIELD_NAMES = ["u", "v", "w", "p"]
 CMAP        = "RdBu_r"
 CMAP        = "coolwarm"
@@ -348,8 +369,26 @@ def run_analysis(cfg):
             dt_val = times[2] - times[0]
             dt_input = jnp.full((batch_size,), dt_val)
             
-            p_lo = get_ensemble_mean_pred(trainer_lo, current_state, dt_input)
-            p_hi = get_ensemble_mean_pred(trainer_hi, current_state, dt_input)
+            
+            if cfg.ens_type=="mean":
+                p_lo = get_ensemble_mean_pred(trainer_lo, current_state, dt_input)
+                p_hi = get_ensemble_mean_pred(trainer_hi, current_state, dt_input)
+            elif cfg.ens_type=="random":
+                key = jax.random.PRNGKey(123)
+                p_lo_rnd = get_ensemble_random_pred(trainer_lo, current_state, dt_input, key)
+                p_hi_rnd = get_ensemble_random_pred(trainer_hi, current_state, dt_input, key)
+
+                # Check this once if the rand_idx is being chosen properly
+                p_lo_sorted = jnp.minimum(p_lo_rnd, p_hi_rnd)
+                p_hi_sorted = jnp.maximum(p_lo_rnd, p_hi_rnd)
+                rand_idx = jax.random.randint(key, shape=(), minval=0, maxval=trainer_lo.model.n_ens)
+                if trainer_lo.model.n_ens == 1:
+                    p_lo = p_lo_sorted[rand_idx,:,:,:,:][None,...]
+                    p_hi = p_hi_sorted[rand_idx,:,:,:,:][None,...]
+                else:
+                    p_lo = p_lo_sorted[rand_idx,:,:,:,:]
+                    p_hi = p_hi_sorted[rand_idx,:,:,:,:]
+            
 
             all_preds_lo.append(p_lo - Q_p)
             all_preds_hi.append(p_hi + Q_p)
@@ -359,6 +398,8 @@ def run_analysis(cfg):
         preds_lo = jnp.concatenate(all_preds_lo, axis=0)
         preds_hi = jnp.concatenate(all_preds_hi, axis=0)
         truth = jnp.stack(actual_truth)
+        
+        print(preds_lo.shape)
         
         # # ── cube scatter plots ────────────────────────────────────────────────
         # cube_dir = os.path.join(workdir_root, "analysis_plots", "cubes")
@@ -392,7 +433,6 @@ def run_analysis(cfg):
         elif cfg.type=="ks3d":
             coverage = jnp.mean(is_covered, axis=(0))
             avg_interval_sizes = jnp.mean(interval_widths, axis=(0))
-    
         coverage_list.append(coverage)
         s_hmap_list.append(n_ens)
         alpha_hmap_list.append(alpha)

@@ -1,9 +1,10 @@
 #!/bin/bash --login
 
-#SBATCH -p gpuA
+#SBATCH --account gpu-af-insilico
+#SBATCH -p gpuH
 #SBATCH --gpus=1
 #SBATCH -t 0-2
-#SBATCH --output=./outputs/slurm/ks3d-%j.out
+#SBATCH --output=./outputs/slurm/beltrami-%j.out
 
 module purge
 # module load libs/cuda

@@ -297,10 +297,25 @@ def main(_):
       y_reps_lo = get_predictions(trainers_dict["lo"], obs[cal_idx], times)
       y_reps_hi = get_predictions(trainers_dict["hi"], obs[cal_idx], times)
       y_true = gt[cal_idx+2] # [N_cal, res, res, res, 4]
+      
+      # Fix 1: pointwise rearrangement to eliminate quantile crossing.
+      # The lo and hi networks are trained independently and may cross pointwise,
+      # especially under unstable training. Sorting enforces the required ordering
+      # at every ensemble member/spatial point/channel without
+      # affecting the coverage proof. The theorem treats the base quantile
+      # functions as arbitrary measurables, and a fixed deterministic
+      # post-processing applied identically at calibration and test time leaves
+      # exchangeability intact.
+      q_lo_sorted = jnp.minimum(y_reps_lo, y_reps_hi)
+      q_hi_sorted = jnp.maximum(y_reps_lo, y_reps_hi)
 
       # Step 4: Per-function, per-replicate residuals
       # r = max(q_lo - u, u - q_hi)
-      resids = jnp.maximum(y_reps_lo - y_true, y_true - y_reps_hi) 
+      # resids = jnp.maximum(y_reps_lo - y_true, y_true - y_reps_hi)
+      # Shape: [n_ens, N_cal, r1, r2, r3, 4]
+      resids = jnp.maximum(q_lo_sorted - y_true, y_true - q_hi_sorted)
+      
+      
 
       # Flatten only the spatial dimensions (res*res*res), keeping channels
       # New shape: [n_ens, N_cal, m_points, 4]
@@ -315,9 +330,16 @@ def main(_):
       s_p_i_j = jnp.sort(flat_resids, axis=2)[:, :, k - 1, :]
 
       # Step 5: Symmetric aggregation across replicates
-      # Mean across ensemble dimension (axis 0)
       # Shape: [N_cal, 4]
-      S_p_i = jnp.mean(s_p_i_j, axis=0)
+      if cfg.ens_type == "mean":
+        # Mean across ensemble dimension (axis 0)
+        S_p_i = jnp.mean(s_p_i_j, axis=0)
+      elif cfg.ens_type == "random":
+        # Choose a random index for each calibration function (i)
+        key = jax.random.PRNGKey(123)
+        J_cal = jax.random.randint(key, shape=(n_cal,), minval=0, maxval=n_ens)
+        # s_p_i_j has shape [n_ens, N_cal, 4]; pick replicate J_cal[i] for each i.
+        S_p_i = s_p_i_j[J_cal, jnp.arange(n_cal), :]  # shape: [N_cal, 4]
 
       # Step 6: Calibrate the thresholds Q_p per channel
       level = (1 - alpha) * (1 + 1 / n_cal)
