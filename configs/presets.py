@@ -113,6 +113,31 @@ def sfcqr_random_smallnn_beltrami_adamw():
     })
     return config
 
+def sfcqr_random_smallnn_beltrami_adamw_longtrain():
+    config = baseline()
+    config.type="beltrami"
+    config.optimizer="adamw"
+    config.ens_type = "random"
+    config.res = 32
+    config.batch_size = 4
+    config.learning_rate = 1e-3
+    config.total_train_steps = 5000
+    config.time_steps = 60
+    config.noise_std = 2
+    config.n_ens = 2
+    config.workdir = "./results/sfcqr_random_noisy_smallnn_beltrami_adamw_longtrain"
+    config.num_unroll_steps = 20
+    config.alpha_list = [0.20, 0.25, 0.30]
+    # config.alpha_list = [0.20, 0.25, 0.30]
+    # config.alpha_list = [2**-5, 2**-4, 2**-3]
+    config.n_ens_list = [1, 2, 4, 8, 16]
+    config.model = config_dict.ConfigDict({
+        'num_channels': (16, 32),
+        'use_spatial_attention': (False, False),
+        'downsample_ratio' : (2, 2)
+    })
+    return config
+
 def sfcqr_smallnn_beltrami_adamw():
     config = baseline()
     config.type="beltrami"

@@ -7,6 +7,7 @@ def get_config(variant="baseline"):
         "sfcqr": presets.sfcqr(),
         "sfcqr_smallnn_beltrami_adamw": presets.sfcqr_smallnn_beltrami_adamw(),
         "sfcqr_random_smallnn_beltrami_adamw": presets.sfcqr_random_smallnn_beltrami_adamw(),
+        "sfcqr_random_smallnn_beltrami_adamw_longtrain": presets.sfcqr_random_smallnn_beltrami_adamw_longtrain(),
         "sfcqr_beltrami_adamw": presets.sfcqr_beltrami_adamw(),
         "sfcqr_smallnn_beltrami_asgld": presets.sfcqr_smallnn_beltrami_asgld(),
         "sfcqr_random_smallnn_beltrami_asgld": presets.sfcqr_random_smallnn_beltrami_asgld(),

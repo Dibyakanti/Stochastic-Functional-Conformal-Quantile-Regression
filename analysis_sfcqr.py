@@ -74,8 +74,6 @@ def get_ensemble_random_pred(trainer, obs, dt_input, key):
         )
 
     ensemble_preds = jax.vmap(single_apply)(variables["params"])
-    # Randomly select one ensemble member's prediction instead of averaging
-    # rand_idx = jax.random.randint(key, shape=(), minval=0, maxval=trainer.model.n_ens)
     return ensemble_preds
 
 FIELD_NAMES = ["u", "v", "w", "p"]
@@ -239,19 +237,11 @@ def plot_interval_cubes(t, n_fields, lo_vol, hi_vol, gt_vol, folder, alpha, n_en
         font_size=12,
         color="black",
     )
-
-    
-    # plotter.render()
-    # plotter.screenshot(fname)
-    # plotter.close()
-    
     
     try:
         plotter.show(screenshot=fname, auto_close=True)
     finally:
         plotter.close()
-
-
 
     print(f"  saved {fname}")
 
