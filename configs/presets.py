@@ -13,7 +13,7 @@ def baseline():
     config.dt = 0.1
     config.num_unroll_steps = 5
     config.noise_std = 0.0
-    config.seed = 0
+    config.seed = 1234
     config.workdir = "./results/baseline"
     config.model = config_dict.ConfigDict({
         'num_channels': (32, 64, 128, 256),

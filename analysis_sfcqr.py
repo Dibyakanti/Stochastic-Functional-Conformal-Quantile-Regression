@@ -12,11 +12,6 @@ import jax.numpy as jnp
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib as mpl
-import matplotlib.gridspec as gridspec
-from matplotlib.colors import Normalize
-import matplotlib.animation as animation
-from matplotlib.cm import ScalarMappable
 import optax
 import orbax.checkpoint as ocp
 from absl import app, flags
@@ -137,7 +132,6 @@ def _add_pyvista_volume(plotter, row, col, vol, clim, cmap, title):
         color="#222222",
     )
 
-    # Make text less harsh
     try:
         txt.GetTextProperty().SetBold(False)
         txt.GetTextProperty().SetShadow(False)
@@ -146,7 +140,6 @@ def _add_pyvista_volume(plotter, row, col, vol, clim, cmap, title):
 
     plotter.camera_position = "iso"
 
-    # Zoom OUT slightly to leave room for the title
     plotter.camera.zoom(0.82)
     
 # ── per-timestep PyVista volume figure ────────────────────────────────────────
@@ -362,6 +355,8 @@ def run_analysis(cfg):
         
         start_idx = 2
         all_preds_lo, all_preds_hi, actual_truth = [], [], []
+        base_key = jax.random.PRNGKey(cfg.seed + 1)
+
 
         for i in range(cfg.num_unroll_steps):
             current_state = obs[start_idx + (2*i) : start_idx + + (2*i) + 1]
@@ -374,7 +369,7 @@ def run_analysis(cfg):
                 p_lo = get_ensemble_mean_pred(trainer_lo, current_state, dt_input)
                 p_hi = get_ensemble_mean_pred(trainer_hi, current_state, dt_input)
             elif cfg.ens_type=="random":
-                key = jax.random.PRNGKey(123)
+                key = jax.random.fold_in(base_key, i)
                 p_lo_rnd = get_ensemble_random_pred(trainer_lo, current_state, dt_input, key)
                 p_hi_rnd = get_ensemble_random_pred(trainer_hi, current_state, dt_input, key)
 

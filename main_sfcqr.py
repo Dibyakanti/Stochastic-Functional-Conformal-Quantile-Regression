@@ -335,9 +335,15 @@ def main(_):
         # Mean across ensemble dimension (axis 0)
         S_p_i = jnp.mean(s_p_i_j, axis=0)
       elif cfg.ens_type == "random":
-        # Choose a random index for each calibration function (i)
-        key = jax.random.PRNGKey(123)
-        J_cal = jax.random.randint(key, shape=(n_cal,), minval=0, maxval=n_ens)
+        # Fix 2: randomised single-replicate score selection.
+        # The previous code used the mean across ensemble members (deterministic
+        # aggregation), which is not covered by the proven coverage theorem.
+        # The theorem (thm:randomized-sfcqr-functional) requires the randomised
+        # branch: draw J_i ~ Unif{1,...,n_ens} independently per calibration
+        # function i, and set S_i = s_{i, J_i}. A separate PRNGKey (cfg.seed + 1)
+        # is used to keep this draw independent from the training randomness.
+        rng_cal = jax.random.PRNGKey(cfg.seed + 1)
+        J_cal = jax.random.randint(rng_cal, shape=(n_cal,), minval=0, maxval=n_ens)
         # s_p_i_j has shape [n_ens, N_cal, 4]; pick replicate J_cal[i] for each i.
         S_p_i = s_p_i_j[J_cal, jnp.arange(n_cal), :]  # shape: [N_cal, 4]
 
