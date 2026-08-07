@@ -375,8 +375,9 @@ def run_analysis(cfg):
                     p_hi = p_hi_sorted[rand_idx,:,:,:,:]
             
 
-            all_preds_lo.append(p_lo - Q_p)
-            all_preds_hi.append(p_hi + Q_p)
+            Q_p_tilde = jnp.maximum(Q_p,0)
+            all_preds_lo.append(p_lo - Q_p_tilde)
+            all_preds_hi.append(p_hi + Q_p_tilde)
             actual_truth.append(gt[start_idx + (2*i) + 2])
 
         # 4. Coverage Calculation
