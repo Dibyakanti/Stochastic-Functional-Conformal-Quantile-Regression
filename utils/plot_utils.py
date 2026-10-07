@@ -35,7 +35,8 @@ def plot_line(
     offset=0,
     shaded=False,
     draw_c_true=False,
-    noise_scale=0.5
+    noise_scale=0.5,
+    y_scale = None
 ):
     # Create a DataFrame from your lists
     df = pd.DataFrame({"x": x_list, "y": y_list, "line": line_list})
@@ -70,6 +71,9 @@ def plot_line(
         b = noise_scale
         y = 1.0 - jnp.exp(-thetas / b)
         plt.plot(y, 2*thetas, color="black", linewidth=1, label=r'$C_{true}$')
+        
+    if y_scale=="log":
+        plt.yscale("log")
         
     plt.xlabel(x_label)
     plt.ylabel(y_label)

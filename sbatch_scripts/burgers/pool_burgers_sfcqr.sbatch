@@ -1,0 +1,34 @@
+#!/bin/bash --login
+
+
+#SBATCH --account gpu-af-insilico
+#SBATCH -p gpuH
+#SBATCH --gpus=1
+#SBATCH -t 0-6
+#SBATCH --output=./outputs/slurm/pool-burgers-%A_%a.out
+
+module purge
+# module load libs/cuda
+
+export SINGULARITYENV_JAX_LOG_LEVEL=error
+export SINGULARITYENV_TF_CPP_MIN_LOG_LEVEL=2
+
+export EXP_NAME=${EXP_NAME:-burgers_sfcqr}
+export SINGULARITYENV_EXP_NAME="$EXP_NAME"
+
+export SINGULARITY_HOME="$HOME"
+export SINGULARITY_LANG="$LANG"
+
+export SINGULARITY_BINDPATH="/scratch,/mnt"
+
+if [ -n "$CUDA_VISIBLE_DEVICES" ]; then
+	export SINGULARITYENV_CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"
+fi
+
+
+for i in $(seq 0 9); do
+	singularity exec --nv ./singularity/jax-csf3_latest.sif python train_burgers_pool.py \
+    --config=configs/burgers_config.py:${EXP_NAME} \
+    --batch_idx=$i \
+    --batch_n_ens=16
+done

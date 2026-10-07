@@ -23,4 +23,4 @@ if [ -n "$CUDA_VISIBLE_DEVICES" ]; then
 	export SINGULARITYENV_CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"
 fi
 
-singularity exec --nv ./singularity/jax-csf3_latest.sif python ./analysis_sfcqr.py --config="configs/config.py:${EXP_NAME}"
+singularity exec --nv ./singularity/jax-csf3_latest.sif python ./analysis_sfcqr_claude.py --config="configs/config.py:${EXP_NAME}"
