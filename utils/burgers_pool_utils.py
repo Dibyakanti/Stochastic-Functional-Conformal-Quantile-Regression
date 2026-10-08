@@ -29,7 +29,7 @@ LOSS_FILENAME = "loss_log.npy"
 BATCH_DIR_RE = re.compile(r"batch_(\d+)$")
 
 
-def _kappas(cfg, n):
+def _nus(cfg, n):
   # Same values as np.arange(vmin, vmax, (vmax - vmin) / n), but guaranteed to
   # have exactly n entries (float-step arange can return n + 1).
   return np.linspace(cfg.grid_data.vmin, cfg.grid_data.vmax, n, endpoint=False)
@@ -38,19 +38,19 @@ def _kappas(cfg, n):
 def generate_function_data(cfg):
   """Per-function training/calibration data, as in burgersSCQR.py.
 
-  Returns u_all (N_train, P_train, m), y_all (N_train, P_train, 2),
+  Returns u_all (N_train, P_train, m), y_all (N_train, P_train, dim + 1),
   s_all (N_train, P_train, 1).
   """
   keys = random.split(random.PRNGKey(0), cfg.N_train)
   return vmap(generate_one_training_data, (0, None, 0))(
-      keys, cfg, _kappas(cfg, cfg.N_train)
+      keys, cfg, _nus(cfg, cfg.N_train)
   )
 
 
 def generate_test_data(cfg):
   """Flattened test data, as in burgersSCQRAnalysis.py."""
   u_test, y_test, s_test = vmap(generate_one_test_data, (None, 0))(
-      cfg, _kappas(cfg, cfg.N_test)
+      cfg, _nus(cfg, cfg.N_test)
   )
   n_pts = cfg.N_test * cfg.P_test**2
   return (
@@ -105,11 +105,16 @@ def load_split(workdir_root):
     return data["idx_train"], data["idx_cp"]
 
 
+def trunk_layers(cfg):
+  """Trunk widths with the input size set to dim + 1 (x_1..x_d, t)."""
+  return [cfg.dim + 1] + list(cfg.model.trunk_layers[1:])
+
+
 def build_ensemble(cfg, n_ens, tau, lr, rng_key):
   return DeepONetEnsemble(
       n_ens=n_ens,
       branch_layers=cfg.model.branch_layers,
-      trunk_layers=cfg.model.trunk_layers,
+      trunk_layers=trunk_layers(cfg),
       lr=lr,
       loss_type="quantile",
       alpha=tau,
@@ -160,6 +165,11 @@ def restore_pool_params(cfg, batch_dirs, lr):
   for _, d in batch_dirs:
     with open(os.path.join(d, META_FILENAME)) as f:
       meta = json.load(f)
+    if meta.get("dim", 1) != cfg.dim:
+      raise ValueError(
+          f"{d} was trained with dim={meta.get('dim', 1)}, but the config has "
+          f"dim={cfg.dim}."
+      )
     ref = build_ensemble(cfg, meta["n_ens"], meta["tau"], lr, random.PRNGKey(0))
     restored.append(
         ckptr.restore(os.path.abspath(os.path.join(d, PARAMS_DIRNAME)), ref.params)

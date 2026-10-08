@@ -4,90 +4,73 @@ import jax.numpy as jnp
 from functools import partial
 
 
-def bateman_solution(x, t, kappa):
-    """Bateman solution of viscous Burgers equation for a shock between f- and f+."""
-    return 2 / (1 + jnp.exp( (x - t) / (kappa)))
+def burgers_solution(x, t, nu):
+    """Analytic solution of the d-dimensional viscous Burgers equation
+
+        u_t + u * sum_i du/dx_i - nu * sum_i d^2u/dx_i^2 = 0,
+        u(x, t) = 1 / (1 + exp((sum_i x_i - d t / 2) / (2 nu))).
+
+    x has shape (..., d) and t broadcasts against x[..., 0].
+    """
+    d = x.shape[-1]
+    return 1 / (1 + jnp.exp((jnp.sum(x, axis=-1) - d * t / 2) / (2 * nu)))
 
 
-def solve_burgers_bateman(cfg, kappa, test=False):
-    """Compute the Bateman solution on a space-time grid."""
-    if(test):
-        x = jnp.linspace(cfg.grid_data.xmin, cfg.grid_data.xmax, cfg.P_test)
-        t = jnp.linspace(cfg.grid_data.tmin, cfg.grid_data.tmax, cfg.P_test)
-    else:
-        x = jnp.linspace(cfg.grid_data.xmin, cfg.grid_data.xmax, cfg.grid_data.Nx)
-        t = jnp.linspace(cfg.grid_data.tmin, cfg.grid_data.tmax, cfg.grid_data.Nt)
+def sample_points(key, cfg, n):
+    """n uniform (x, t) points in [xmin, xmax]^dim x [tmin, tmax], shape (n, dim + 1)."""
+    g = cfg.grid_data
+    key_x, key_t = random.split(key)
+    x = random.uniform(key_x, (n, cfg.dim), minval=g.xmin, maxval=g.xmax)
+    t = random.uniform(key_t, (n, 1), minval=g.tmin, maxval=g.tmax)
+    return jnp.hstack((x, t))
 
-    # Fill solution array
-    if(test):
-        u = jnp.zeros((cfg.P_test, cfg.P_test))
-        for i in range(cfg.P_test):
-            u = u.at[:, i].set(bateman_solution(x, t[i], kappa))
-    else:
-        u = jnp.zeros((cfg.grid_data.Nx, cfg.grid_data.Nt)) 
-        for i in range(cfg.grid_data.Nt):
-            u = u.at[:, i].set(bateman_solution(x, t[i], kappa))
 
-    return x, t, u
+def sensor_locations(cfg):
+    """Fixed branch-input sensors in [xmin, xmax]^dim, shared by every function."""
+    m = cfg.model.branch_layers[0]
+    return random.uniform(random.PRNGKey(2024), (m, cfg.dim),
+                          minval=cfg.grid_data.xmin, maxval=cfg.grid_data.xmax)
+
+
+def initial_condition(cfg, nu):
+    """u(x, 0) at the sensor locations, shape (m,)."""
+    return burgers_solution(sensor_locations(cfg), 0.0, nu)
+
+
+def _add_noise(key, cfg, s):
+    if cfg.noise_scale > 0.0:
+        return s + cfg.noise_scale * random.laplace(key, shape=s.shape)
+    return s
 
 
 # Generate training data corresponding to one input sample
-def generate_one_training_data(key, cfg, kappa):
-    # Analytic Bateman solution
-    x, t, s = solve_burgers_bateman(cfg, kappa)
-
-    # Initial condition u(x,0)
-    x_ini = jnp.linspace(cfg.grid_data.xmin,cfg.grid_data.xmax,cfg.model.branch_layers[0])
-    u0 = bateman_solution(x_ini, 0.0, kappa)
-
+def generate_one_training_data(key, cfg, nu):
     # Input data repeated P times
-    u_train = jnp.tile(u0, (cfg.P_train, 1))
+    u_train = jnp.tile(initial_condition(cfg, nu), (cfg.P_train, 1))
 
-    # Random subsamples of space-time points
-    subkeys = random.split(key, 3)
-    x_2_idx = random.choice(subkeys[0], jnp.arange(cfg.grid_data.Nx), shape=(cfg.P_train, 1))
-    t_2_idx = random.choice(subkeys[1], jnp.arange(cfg.grid_data.Nt), shape=(cfg.P_train, 1))
-
-    x_2 = x[x_2_idx]
-    t_2 = t[t_2_idx]
-    y_train_don = jnp.hstack((x_2, t_2))
-
-    # Corresponding solution values
-    s_true = s[x_2_idx, t_2_idx]
-    if cfg.noise_scale > 0.0:
-        noise = cfg.noise_scale * random.laplace(subkeys[2], shape=s_true.shape)
-        s_train_don = s_true + noise
-    else:
-        s_train_don = s_true
+    # Random space-time points and corresponding solution values
+    key_y, key_noise = random.split(key)
+    y_train_don = sample_points(key_y, cfg, cfg.P_train)
+    s_true = burgers_solution(y_train_don[:, :-1], y_train_don[:, -1], nu)[:, None]
+    s_train_don = _add_noise(key_noise, cfg, s_true)
     return u_train, y_train_don, s_train_don
 
 
 # Generate test data corresponding to one input sample
-def generate_one_test_data(cfg, kappa):
-    x, t, s = solve_burgers_bateman(cfg, kappa, test=True)
+def generate_one_test_data(cfg, nu):
+    """P_test**2 space-time points, the same for every test function."""
+    n_pts = cfg.P_test**2
+    u_test = jnp.tile(initial_condition(cfg, nu), (n_pts, 1))
 
-    XX, TT = jnp.meshgrid(x, t, indexing="ij")
-
-    # Initial condition
-    x_ini = jnp.linspace(cfg.grid_data.xmin, cfg.grid_data.xmax, cfg.model.branch_layers[0])
-    u0 = bateman_solution(x_ini, 0.0, kappa)
-    u_test = jnp.tile(u0, (cfg.P_test**2, 1))
-
-    y_test = jnp.hstack([XX.flatten()[:, None], TT.flatten()[:, None]])
-    s_flat = s.flatten()
-    if cfg.noise_scale > 0.0:
-        key = random.PRNGKey(123)
-        noise = cfg.noise_scale * random.laplace(key, shape=s_flat.shape)
-        s_test = s_flat + noise
-    else:
-        s_test = s_flat
-
+    y_test = sample_points(random.PRNGKey(321), cfg, n_pts)
+    s_flat = burgers_solution(y_test[:, :-1], y_test[:, -1], nu)
+    s_test = _add_noise(random.PRNGKey(123), cfg, s_flat)
     return u_test, y_test, s_test
 
 
 # Generate test data for plotting
-def generate_test_data_visualization(cfg, kappa):
-    u_test, y_test, s_test = generate_one_test_data(cfg, kappa)
+def generate_test_data_visualization(cfg, nu):
+    u_test, y_test, s_test = generate_one_test_data(cfg, nu)
 
     u_test = jnp.float32(u_test.reshape(-1, u_test.shape[-1]))
     y_test = jnp.float32(y_test.reshape(-1, y_test.shape[-1]))

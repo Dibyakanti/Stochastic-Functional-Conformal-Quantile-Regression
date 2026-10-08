@@ -83,6 +83,7 @@ def main(_):
                 "alpha": alpha,
                 "lr": lr,
                 "batch_idx": batch_idx,
+                "dim": cfg.dim,
             },
         )
 
