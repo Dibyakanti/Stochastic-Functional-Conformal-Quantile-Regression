@@ -40,15 +40,24 @@ class DeepONetEnsemble:
     An ensemble of identical DeepONet models trained in parallel
     using vmap.  All ensemble members share architecture but have
     independent parameters and optimizer states.
+
+    With n_out > 1 the branch and trunk each output n_out * p latents, split
+    into n_out groups of p, and output c is the dot product of group c
+    ("split both"). n_out = 1 is the usual scalar DeepONet.
     """
     def __init__(self, n_ens, branch_layers, trunk_layers, lr,
                  loss_type="quantile", huber_delta=0.4, alpha=0.5,
-                 activation=jnp.tanh, rng_key=random.PRNGKey(0)):
+                 activation=jnp.tanh, rng_key=random.PRNGKey(0), n_out=1):
 
         self.n_ens      = n_ens
+        self.n_out      = n_out
         self.loss_type  = loss_type
         self.huber_delta= huber_delta
         self.alpha      = alpha
+
+        # Last layer of both nets is p per output
+        branch_layers = list(branch_layers[:-1]) + [n_out * branch_layers[-1]]
+        trunk_layers  = list(trunk_layers[:-1])  + [n_out * trunk_layers[-1]]
 
         # Build networks
         self.branch_init, self.branch_apply = MLP(branch_layers, activation=activation)
@@ -74,12 +83,12 @@ class DeepONetEnsemble:
     def operator_net(self, params, f, z):
         branch_params, trunk_params = params
         if z.ndim==1: z = z[None,:]
-        B = self.branch_apply(branch_params, f)
-        T = self.trunk_apply(trunk_params,  z)
-        return jnp.sum(B*T)
+        B = self.branch_apply(branch_params, f).reshape(self.n_out, -1)
+        T = self.trunk_apply(trunk_params,  z).reshape(self.n_out, -1)
+        return jnp.sum(B*T, axis=-1)  # (n_out,)
 
     def predict_u(self, params, f_star, z_star):
-        return vmap(self.operator_net, (None,0,0))(params, f_star, z_star).reshape(-1,1)
+        return vmap(self.operator_net, (None,0,0))(params, f_star, z_star).reshape(-1, self.n_out)
 
     def get_state(self):
         return {
@@ -94,8 +103,8 @@ class DeepONetEnsemble:
     def loss_don(self, params, batch):
         inputs, outputs = batch
         f,z = inputs
-        pred = vmap(self.operator_net,(None,0,0))(params,f,z)
-        y    = outputs.flatten()
+        pred = vmap(self.operator_net,(None,0,0))(params,f,z)  # (batch, n_out)
+        y    = outputs.reshape(pred.shape)
         if   self.loss_type=="huber":
             return jnp.mean(optax.losses.huber_loss(pred, y, delta=self.huber_delta))
         elif self.loss_type=="quantile":
