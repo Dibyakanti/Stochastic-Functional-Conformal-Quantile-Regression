@@ -25,7 +25,7 @@ def beltrami_don_sfcqr():
     config.workdir = "./results/beltrami_uvit_don_sfcqr"
 
     # Data (as in the UNet preset)
-    config.res = 16
+    config.res = 32
     config.time_steps = 80
     config.dt = 0.1
     config.noise_std = 2
@@ -33,12 +33,22 @@ def beltrami_don_sfcqr():
     # gt[4 + 2i], for i < num_unroll_steps.
     config.num_unroll_steps = 20
 
-    # Train: P_train fixed random grid points per training function. Each
-    # step a member sees fn_batch_size functions x pts_per_fn of their points.
-    config.P_train = 2000
+    # Train. Each step a member sees fn_batch_size functions x pts_per_fn
+    # points. With augment_symmetry, each input and target field is randomly
+    # cyclically permuted ((x, y, z) -> (y, z, x) with (u, v, w) -> (v, w, u),
+    # an exact symmetry of the a = d Beltrami flow), i.e. gets a fresh noise
+    # realisation, and points come from the whole grid (P_train is unused).
+    config.augment_symmetry = True
+    config.P_train = 4096
     config.nIter = 3000
-    config.fn_batch_size = 4
-    config.pts_per_fn = 256
+    config.fn_batch_size = 15
+    config.pts_per_fn = 2048
+    config.training = config_dict.ConfigDict({
+        # Constant lr for the first half (needed to leave the constant-output
+        # plateau), then cosine decay to 0 (removes the late-training jitter).
+        "lr_schedule": "hold_cosine",
+        "decay_start": 0.5,
+    })
 
     # SFCQR
     config.alpha_list = [0.20, 0.25, 0.30]
@@ -48,13 +58,14 @@ def beltrami_don_sfcqr():
 
     config.channels = ["u", "v", "w", "p"]
     config.model = config_dict.ConfigDict({
-        # UNet3d encoder settings (as in presets.sfcqrclaude_beltrami_adamw;
-        # the rest are UNet3d defaults). res must be divisible by the product
-        # of downsample_ratio.
+        # UNet3d encoder settings: the structure of
+        # presets.sfcqrclaude_beltrami_adamw at half the width and half the
+        # blocks (the full size fits the input noise of the few training
+        # fields). res must be divisible by the product of downsample_ratio.
         "branch": {
-            "num_channels": (16, 32, 64),
-            "downsample_ratio": (2, 2, 2),
-            "use_spatial_attention": (False, False, True),
+            "num_channels": (8, 16, 32, 64),
+            "downsample_ratio": (2, 2, 2, 2),
+            "use_spatial_attention": (False, False, True, True),
             "num_blocks": 4,
             "noise_embed_dim": 128,
             "input_proj_channels": 128,
@@ -62,9 +73,24 @@ def beltrami_don_sfcqr():
         },
         # The first entry is replaced by 3 (x, y, z); the last is the latent
         # size p per channel, so both nets output 4 * p.
-        "trunk_layers": [3, 512, 256, 128, 64],
+        "trunk_layers": [3, 128, 512, 256, 128, 64],
         "loss_type": "quantile",
     })
+    return config
+
+
+def beltrami_don_sfcqr_baseline():
+    """The first UViT-branch config, kept for comparison: full-size branch,
+    constant lr, P_train fixed points per function, no augmentation."""
+    config = beltrami_don_sfcqr()
+    config.workdir = "./results/beltrami_uvit_don_sfcqr_baseline"
+    config.augment_symmetry = False
+    config.P_train = 2000
+    config.fn_batch_size = 8
+    config.pts_per_fn = 1024
+    config.training = config_dict.ConfigDict({"lr_schedule": "constant"})
+    config.model.branch.num_channels = (16, 32, 64)
+    config.model.branch.num_blocks = 4
     return config
 
 
@@ -81,6 +107,7 @@ def beltrami_don_sfcqr_smoke():
 def get_config(variant="beltrami_don_sfcqr"):
     options = {
         "beltrami_don_sfcqr": beltrami_don_sfcqr,
+        "beltrami_don_sfcqr_baseline": beltrami_don_sfcqr_baseline,
         "beltrami_don_sfcqr_smoke": beltrami_don_sfcqr_smoke,
     }
     return options[variant]()

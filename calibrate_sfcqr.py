@@ -48,6 +48,7 @@ sys.path.append("./")
 
 from data.ks3dDataGeneration import *
 from data.beltramiDataGeneration import *
+from data.challengeDataLoading import *
 from model.unet3d import UNet3d
 from train.models import QuantileEnsembleDAModel
 from train.trainers import BeltramiTrainer
@@ -284,6 +285,11 @@ def main(_):
     gt, obs, times = generate_ks3d_da_data(
         spatial_res=cfg.res, time_steps=cfg.time_steps, noise_std=cfg.noise_std
     )
+  elif cfg.type == "challenge2_1":
+    out_dim = 2
+    gt, obs, times = load_challenge_da_data(
+        data_dir=cfg.data_dir, time_steps=cfg.time_steps, noise_std=cfg.noise_std
+    )
 
   train_idx, cal_idx = load_split(workdir_root)
   y_train_true = gt[train_idx + 2]
@@ -299,7 +305,7 @@ def main(_):
       use_spatial_attention=cfg.model.use_spatial_attention,
       downsample_ratio=cfg.model.downsample_ratio,
   )
-  input_shape = (cfg.batch_size, cfg.res, cfg.res, cfg.res, out_dim)
+  input_shape = (cfg.batch_size, *gt.shape[1:])
 
   for alpha in cfg.alpha_list:
     experiment_dir = os.path.join(workdir_root, f"alpha_{alpha}")

@@ -152,3 +152,53 @@ def sfcqrclaude_ks_adamw():
         'downsample_ratio' : (2, 2, 2)
     })
     return config
+
+def sfcqrclaude_smallnn_challenge_adamw():
+    config = baseline()
+    config.type="challenge2_1"
+    config.data_dir = "./dataset"
+    config.optimizer="adamw"
+    config.res = None  # grid is (152, 48, 1), set by the loader
+    config.batch_size = 8
+    config.learning_rate = 1e-3
+    config.total_train_steps = 2000
+    config.time_steps = 400
+    config.noise_std = 0.0
+    config.n_ens = 2
+    config.workdir = "./results/sfcqrclaude_smallnn_challenge_adamw"
+    config.num_unroll_steps = 20
+    config.alpha_list = [0.20, 0.25, 0.30]
+    config.beta = 0.20
+    config.n_ens_list = [1, 2, 4, 8, 16]
+    config.variant = "A"
+    config.model = config_dict.ConfigDict({
+        'num_channels': (16, 32),
+        'use_spatial_attention': (False, False),
+        'downsample_ratio' : ((2, 2, 1),) * 2
+    })
+    return config
+
+def sfcqrclaude_challenge_adamw():
+    config = baseline()
+    config.type="challenge2_1"
+    config.data_dir = "./dataset"
+    config.optimizer="adamw"
+    config.res = None  # grid is (152, 48, 1), set by the loader
+    config.batch_size = 8
+    config.learning_rate = 1e-3
+    config.total_train_steps = 2000
+    config.time_steps = 400
+    config.noise_std = 0.0
+    config.n_ens = 2
+    config.workdir = "./results/sfcqrclaude_challenge_adamw"
+    config.num_unroll_steps = 20
+    config.alpha_list = [0.20, 0.25, 0.30]
+    config.beta = 0.20
+    config.n_ens_list = [1, 2, 4, 8, 16]
+    config.variant = "A"
+    config.model = config_dict.ConfigDict({
+        'num_channels': (16, 32, 64),
+        'use_spatial_attention': (False, False, True),
+        'downsample_ratio' : ((2, 2, 1),) * 3
+    })
+    return config

@@ -8,7 +8,9 @@ def get_config(variant="baseline"):
         "sfcqrclaude_ks_adamw": presets.sfcqrclaude_ks_adamw(),
         "sfcqrclaude_smallnn_beltrami_adamw_trainlonger": presets.sfcqrclaude_smallnn_beltrami_adamw_trainlonger(),
         "sfcqrclaude_smallnn_beltrami_adamw": presets.sfcqrclaude_smallnn_beltrami_adamw(),
-        "sfcqrclaude_beltrami_adamw": presets.sfcqrclaude_beltrami_adamw()
+        "sfcqrclaude_beltrami_adamw": presets.sfcqrclaude_beltrami_adamw(),
+        "sfcqrclaude_smallnn_challenge_adamw": presets.sfcqrclaude_smallnn_challenge_adamw(),
+        "sfcqrclaude_challenge_adamw": presets.sfcqrclaude_challenge_adamw()
     }
     return options[variant]
 

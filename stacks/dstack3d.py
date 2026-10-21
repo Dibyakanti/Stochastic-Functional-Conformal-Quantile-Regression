@@ -23,7 +23,7 @@ import numpy as np
 
 from layers.convolutions import ConvLayer, DownsampleConv, ConvBlock
 from layers.axial_attention import AxialSelfAttentionBlock
-from utils.model_utils import default_init
+from utils.model_utils import as_3d_ratio, default_init
 
 Array = jax.Array
 Initializer = nn.initializers.Initializer
@@ -46,7 +46,7 @@ class DStack(nn.Module):
 
   num_channels: Sequence[int]
   num_res_blocks: Sequence[int]
-  downsample_ratio: Sequence[int]
+  downsample_ratio: Sequence[int | tuple[int, int, int]]
   use_spatial_attention: Sequence[bool]
   # use_temporal_attention: Sequence[bool]
   num_input_proj_channels: int = 128
@@ -110,15 +110,16 @@ class DStack(nn.Module):
 
     # Downsampling.
     for level, channel in enumerate(self.num_channels):
+      ratios = as_3d_ratio(self.downsample_ratio[level])
       h = DownsampleConv(
           features=channel,
-          ratios=(self.downsample_ratio[level], self.downsample_ratio[level], self.downsample_ratio[level]),
+          ratios=ratios,
           kernel_init=default_init(1.0),
           dtype=self.dtype,
           param_dtype=self.param_dtype,
           name=f"{nt}xres{'x'.join(spatial_dims.astype(str))}.downsample",
       )(h)
-      spatial_dims = spatial_dims // self.downsample_ratio[level]
+      spatial_dims = spatial_dims // np.asarray(ratios[-len(spatial_dims):])
       dims_str = spatial_dims.astype(str)
 
       # First part of the processing. The rest will be done in the UStack.

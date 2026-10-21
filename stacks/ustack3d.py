@@ -25,7 +25,7 @@ from layers.convolutions import ConvLayer, ConvBlock
 from layers.axial_attention import AxialSelfAttentionBlock
 from layers.residual import CombineResidualWithSkip
 from layers.upsample import channel_to_space
-from utils.model_utils import default_init
+from utils.model_utils import as_3d_ratio, default_init
 
 Array = jax.Array
 Initializer = nn.initializers.Initializer
@@ -48,7 +48,7 @@ class UStack(nn.Module):
 
   num_channels: Sequence[int]
   num_res_blocks: Sequence[int]
-  upsample_ratio: Sequence[int]
+  upsample_ratio: Sequence[int | tuple[int, int, int]]
   use_spatial_attention: Sequence[bool]
   # use_temporal_attention: Sequence[bool]
   num_output_proj_channels: int = 128
@@ -148,9 +148,9 @@ class UStack(nn.Module):
           )(h, is_training)
 
       # Upsampling.
-      up_ratio = self.upsample_ratio[level]
+      up_ratio = as_3d_ratio(self.upsample_ratio[level])
       h = ConvLayer(
-          features=up_ratio**3 * channel,
+          features=int(np.prod(up_ratio)) * channel,
           kernel_size=(3, 3, 3),
           padding=self.padding,
           kernel_init=default_init(1.0),
@@ -159,8 +159,8 @@ class UStack(nn.Module):
           param_dtype=self.param_dtype,
           name=f"{nt}xres{'x'.join(dims_str)}.conv3d_preupsample",
       )(h)
-      h = channel_to_space(inputs=h, block_shape=(up_ratio, up_ratio, up_ratio))
-      spatial_dims = spatial_dims * up_ratio
+      h = channel_to_space(inputs=h, block_shape=up_ratio)
+      spatial_dims = spatial_dims * np.asarray(up_ratio[-len(spatial_dims):])
       dims_str = spatial_dims.astype(str)
 
     h = CombineResidualWithSkip(

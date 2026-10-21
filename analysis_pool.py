@@ -26,7 +26,10 @@ os.environ["MPLBACKEND"] = "Agg"
 import sys
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 from absl import app, flags
 from ml_collections import config_flags
 
@@ -34,6 +37,7 @@ sys.path.append("./")
 
 from model.unet3d import UNet3d
 from data.beltramiDataGeneration import *
+from data.challengeDataLoading import *
 from data.ks3dDataGeneration import *
 from utils.plot_utils import plot_line
 
@@ -85,6 +89,20 @@ def predict_with_dt(unet, variables, obs, dt_input, member_chunk_size=4):
   return jnp.concatenate(outputs, axis=0)
 
 
+def plot_functional_coverage(s, func_cov, alpha, beta, channel, folder_name, filename):
+  df = pd.DataFrame({"s": s, "cov": func_cov, "alpha": [f"{a:.3f}" for a in alpha]})
+  plt.figure(figsize=(8, 6))
+  sns.lineplot(data=df, x="s", y="cov", hue="alpha", marker="o")
+  plt.axhline(1 - beta, color="black", linestyle=":", linewidth=1, label=r"$1-\beta$")
+  plt.xlabel(r"$s$")
+  plt.ylabel(f"Functional Coverage Fraction ({channel})")
+  plt.title(rf"Functional coverage vs $s$ (target $1-\beta$ = {1 - beta:.2f})")
+  plt.legend(title=r"$\alpha$")
+  os.makedirs(folder_name, exist_ok=True)
+  plt.savefig(f"{folder_name}/{filename}.png", bbox_inches="tight")
+  plt.close()
+
+
 def select_members(variables, member_idx):
   return jax.tree.map(lambda x: x[member_idx], variables)
 
@@ -113,6 +131,12 @@ def run_analysis(cfg):
     # end, so `gt`/`obs` already come back as (T, X, Y, Z, 1), matching the
     # U-Net's trailing out_dim=1 channel axis. No reshape needed here.
 
+  elif cfg.type == "challenge2_1":
+    out_dim = 2
+    gt, obs, times = load_challenge_da_data(
+        data_dir=cfg.data_dir, time_steps=cfg.time_steps, noise_std=cfg.noise_std
+    )
+
   unet = UNet3d(
       out_channels=out_dim,
       time_cond=True,
@@ -120,7 +144,7 @@ def run_analysis(cfg):
       use_spatial_attention=cfg.model.use_spatial_attention,
       downsample_ratio=cfg.model.downsample_ratio,
   )
-  input_shape = (cfg.batch_size, cfg.res, cfg.res, cfg.res, out_dim)
+  input_shape = (cfg.batch_size, *gt.shape[1:])
 
   train_idx, _cal_idx = load_split(workdir_root)
   y_train_true = gt[train_idx + 2]
@@ -128,6 +152,7 @@ def run_analysis(cfg):
   delta = delta.reshape(1, 1, 1, 1, out_dim)
 
   coverage_list, s_hmap_list, alpha_hmap_list, interval_size_list = [], [], [], []
+  func_coverage_list = []
 
   for alpha in cfg.alpha_list:
     experiment_dir = os.path.join(workdir_root, f"alpha_{alpha}")
@@ -222,18 +247,31 @@ def run_analysis(cfg):
         coverage = jnp.mean(is_covered, axis=reduce_axes)
         avg_interval_sizes = jnp.mean(interval_widths, axis=reduce_axes)
 
+        # Functional coverage: fraction of rollout steps (one field each) with
+        # at least ceil((1 - alpha) m) of their m grid points covered
+        # (SFCQR's target, 1 - beta).
+        n_steps, n_channels = is_covered.shape[0], is_covered.shape[-1]
+        per_field = is_covered.reshape(n_steps, -1, n_channels)
+        k_pts = int(np.ceil((1 - alpha) * per_field.shape[1]))
+        func_coverage = jnp.mean(per_field.sum(axis=1) >= k_pts, axis=0)
+
         coverage_list.append(np.array(coverage))
         s_hmap_list.append(n_ens_sub)
         alpha_hmap_list.append(alpha)
         interval_size_list.append(np.array(avg_interval_sizes))
+        func_coverage_list.append(np.array(func_coverage))
 
   coverages = np.array(coverage_list)
   intervals = np.array(interval_size_list)
+  func_coverages = np.array(func_coverage_list)
   s_vals = np.array(s_hmap_list)
   alpha_vals = np.array(alpha_hmap_list)
   target_coverage = 1.0 - alpha_vals
 
-  channel_names = ["u", "v", "w", "p"] if cfg.type == "beltrami" else ["u"]
+  channel_names = {
+      "beltrami": ["u", "v", "w", "p"],
+      "challenge2_1": ["ux", "uy"],
+  }.get(cfg.type, ["u"])
   lr_suffix = f"lr{cfg.learning_rate}"
   folder_name = os.path.join(workdir_root, "analysis_pool_plots")
   os.makedirs(folder_name, exist_ok=True)
@@ -246,6 +284,17 @@ def run_analysis(cfg):
 
     print(f"\nFinal Metrics for Channel {name}:")
     print(f"Mean Coverage: {np.mean(chan_coverage) * 100:.2f}%")
+    for alpha in np.unique(alpha_vals):
+      for s in np.unique(s_vals):
+        sel = (alpha_vals == alpha) & (s_vals == s)
+        if not sel.any():
+          continue
+        print(
+            f"alpha={alpha} s={s}: pointwise {coverages[sel, i].mean():.4f} +- "
+            f"{coverages[sel, i].std():.4f} (target {1 - alpha:.3f}), functional "
+            f"{func_coverages[sel, i].mean():.4f} +- {func_coverages[sel, i].std():.4f} "
+            f"(target {1 - cfg.beta:.3f})"
+        )
 
     filename = f"SCQR_Coverage_lineplot_{name}_{lr_suffix}"
     plot_line(
@@ -272,6 +321,11 @@ def run_analysis(cfg):
         folder_name=folder_name,
         filename=filename,
         y_scale = "log",
+    )
+
+    plot_functional_coverage(
+        s_vals, func_coverages[:, i], alpha_vals, cfg.beta, name, folder_name,
+        f"SCQR_FunctionalCoverage_lineplot_{name}_{lr_suffix}",
     )
 
     # filename = f"SCQR_Interval_Coverage_lineplot_{name}_{lr_suffix}"

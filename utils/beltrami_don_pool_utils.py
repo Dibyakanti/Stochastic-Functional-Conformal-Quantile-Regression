@@ -74,6 +74,33 @@ def branch_fields(obs, fn_idx):
   return np.float32(obs[np.asarray(fn_idx)])
 
 
+def target_fields(obs, fn_idx):
+  """Whole training target fields obs[i + 2], (len(fn_idx), X, Y, Z, 4)."""
+  return np.float32(obs[np.asarray(fn_idx) + TARGET_OFFSET])
+
+
+def make_sampler(cfg, obs, grid, fn_idx, n_ens, rng_key):
+  """Training minibatch sampler for the functions `fn_idx`.
+
+  With cfg.augment_symmetry, inputs and targets are randomly cyclically
+  permuted (see `model.uvit_don.SymmetryAugmentedSampler`) and points come
+  from the whole grid; otherwise each function uses its P_train fixed points.
+  """
+  from model.uvit_don import FunctionPointSampler, SymmetryAugmentedSampler
+  fields, time = branch_fields(obs, fn_idx), time_gap(cfg, len(fn_idx))
+  if cfg.get("augment_symmetry", False):
+    return SymmetryAugmentedSampler(
+        fields, time, target_fields(obs, fn_idx), np.float32(grid),
+        n_ens=n_ens, n_fn=cfg.fn_batch_size, n_pts=cfg.pts_per_fn,
+        rng_key=rng_key,
+    )
+  y, s = function_data(obs, grid, fn_idx, min(cfg.P_train, grid.shape[0]))
+  return FunctionPointSampler(
+      fields, time, y, s, n_ens=n_ens, n_fn=cfg.fn_batch_size,
+      n_pts=cfg.pts_per_fn, rng_key=rng_key,
+  )
+
+
 def time_gap(cfg, n):
   """Branch time input: the gap between input and target, as the UNet gets
   it from `da_dataloader` (TARGET_OFFSET * dt for every function)."""
@@ -132,7 +159,18 @@ def build_ensemble(cfg, n_ens, tau, lr, rng_key):
       n_out=N_CHANNELS,
       alpha=tau,
       rng_key=rng_key,
+      total_steps=cfg.nIter,
+      **training_kwargs(cfg),
   )
+
+
+def training_kwargs(cfg):
+  """Optional model/optimizer settings; absent keys keep the plain defaults."""
+  t = cfg.get("training", {})
+  keys = ("output_bias", "input_scale", "lr_schedule", "warmup_steps",
+          "weight_decay", "clip_norm", "mse_warmup_steps", "decay_start",
+          "ema_decay")
+  return {k: t[k] for k in keys if k in t}
 
 
 def quantile_dir(workdir_root, alpha, lr, label):

@@ -7,8 +7,10 @@ DeepONet counterpart of `train_ensemble_pool.py` (UNet), built the same way as
 Each function is a time index i from the training split: the branch (the UViT
 encoder of `UNet3d`, see `model/uvit_don.py`) sees the whole noisy field obs[i]
 and the time gap, the trunk sees (x, y, z), and the target is obs[i + 2] (all
-4 channels) at P_train fixed random grid points. Each step, every member gets
-its own minibatch of `fn_batch_size` functions x `pts_per_fn` of their points.
+4 channels). Each step, every member gets its own minibatch of
+`fn_batch_size` functions x `pts_per_fn` points: from P_train fixed points per
+function, or, with `augment_symmetry`, from the whole grid after a random
+cyclic (x, y, z) / (u, v, w) permutation of input and target.
 A single DeepONet outputs u, v, w, p together, trained with the quantile loss
 averaged over the four outputs. Only `train_idx` from `<workdir>/split.npz` is
 used; the calibration time indices are never touched.
@@ -32,16 +34,13 @@ from ml_collections import config_flags
 
 sys.path.append("./")
 
-from model.uvit_don import FunctionPointSampler
 from utils.beltrami_don_pool_utils import (
     N_CHANNELS,
-    branch_fields,
     build_ensemble,
-    function_data,
     get_or_create_split,
     load_beltrami_data,
+    make_sampler,
     quantile_dir,
-    time_gap,
 )
 from utils.burgers_pool_utils import save_batch
 
@@ -62,10 +61,6 @@ def main(_):
   _, obs, grid = load_beltrami_data(cfg)
   train_idx, _ = get_or_create_split(workdir_root, cfg, obs.shape[0])
 
-  f_train = branch_fields(obs, train_idx)
-  t_train = time_gap(cfg, len(train_idx))
-  y_train, s_train = function_data(obs, grid, train_idx, cfg.P_train)
-
   batch_key = random.fold_in(random.PRNGKey(cfg.seed), batch_idx)
 
   for alpha in cfg.alpha_list:
@@ -80,10 +75,7 @@ def main(_):
             f"--- batch {batch_idx} ({batch_n_ens} members): "
             f"alpha={alpha} lr={lr} {label} (tau={tau}) ---"
         )
-        sampler = FunctionPointSampler(
-            f_train, t_train, y_train, s_train, n_ens=batch_n_ens,
-            n_fn=cfg.fn_batch_size, n_pts=cfg.pts_per_fn, rng_key=data_key,
-        )
+        sampler = make_sampler(cfg, obs, grid, train_idx, batch_n_ens, data_key)
         ensemble = build_ensemble(cfg, batch_n_ens, tau, lr, init_key)
         ensemble.train(sampler, nIter=cfg.nIter)
 

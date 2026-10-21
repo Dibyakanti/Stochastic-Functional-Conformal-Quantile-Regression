@@ -58,6 +58,7 @@ from train import trainers
 # import main_sfcqr_claude as sfcqr  # reuse `run()` and data-generation glue
 from data.ks3dDataGeneration import *
 from data.beltramiDataGeneration import *
+from data.challengeDataLoading import *
 from utils.data_utils import *
 from model.unet3d import UNet3d
 from train.models import QuantileEnsembleDAModel
@@ -242,6 +243,13 @@ def main(_):
         time_steps=cfg.time_steps,
         noise_std=cfg.noise_std,
     )
+  elif cfg.type == "challenge2_1":
+    out_dim = 2
+    gt, obs, times = load_challenge_da_data(
+        data_dir=cfg.data_dir,
+        time_steps=cfg.time_steps,
+        noise_std=cfg.noise_std,
+    )
 
   num_samples = gt.shape[0]
   train_idx, _cal_idx = get_or_create_split(workdir_root, cfg, num_samples)
@@ -277,7 +285,7 @@ def main(_):
 
       da_model = QuantileEnsembleDAModel(
           model=unet,
-          input_shape=(cfg.batch_size, cfg.res, cfg.res, cfg.res, out_dim),
+          input_shape=(cfg.batch_size, *gt.shape[1:]),
           n_ens=batch_n_ens,
           tau=tau,
       )

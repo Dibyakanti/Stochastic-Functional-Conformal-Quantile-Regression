@@ -12,3 +12,4 @@ results/*/alpha*
 results/*/analysis_plots/cubes/
 results/old/
 singularity/
+dataset/
