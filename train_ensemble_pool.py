@@ -250,6 +250,14 @@ def main(_):
         time_steps=cfg.time_steps,
         noise_std=cfg.noise_std,
     )
+  elif cfg.type == "challenge2_2":
+    out_dim = 2
+    gt, obs, times = load_challenge2_2_da_data(
+        data_dir=cfg.data_dir,
+        case=cfg.case,
+        time_steps=cfg.time_steps,
+        noise_std=cfg.noise_std,
+    )
 
   num_samples = gt.shape[0]
   train_idx, _cal_idx = get_or_create_split(workdir_root, cfg, num_samples)

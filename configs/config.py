@@ -10,7 +10,9 @@ def get_config(variant="baseline"):
         "sfcqrclaude_smallnn_beltrami_adamw": presets.sfcqrclaude_smallnn_beltrami_adamw(),
         "sfcqrclaude_beltrami_adamw": presets.sfcqrclaude_beltrami_adamw(),
         "sfcqrclaude_smallnn_challenge_adamw": presets.sfcqrclaude_smallnn_challenge_adamw(),
-        "sfcqrclaude_challenge_adamw": presets.sfcqrclaude_challenge_adamw()
+        "sfcqrclaude_challenge_adamw": presets.sfcqrclaude_challenge_adamw(),
+        "sfcqrclaude_smallnn_challenge2_2_adamw": presets.sfcqrclaude_smallnn_challenge2_2_adamw(),
+        "sfcqrclaude_challenge2_2_adamw": presets.sfcqrclaude_challenge2_2_adamw()
     }
     return options[variant]
 

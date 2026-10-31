@@ -166,7 +166,7 @@ def sfcqrclaude_smallnn_challenge_adamw():
     config.noise_std = 0.0
     config.n_ens = 2
     config.workdir = "./results/sfcqrclaude_smallnn_challenge_adamw"
-    config.num_unroll_steps = 20
+    config.num_unroll_steps = 199
     config.alpha_list = [0.20, 0.25, 0.30]
     config.beta = 0.20
     config.n_ens_list = [1, 2, 4, 8, 16]
@@ -191,7 +191,7 @@ def sfcqrclaude_challenge_adamw():
     config.noise_std = 0.0
     config.n_ens = 2
     config.workdir = "./results/sfcqrclaude_challenge_adamw"
-    config.num_unroll_steps = 20
+    config.num_unroll_steps = 199
     config.alpha_list = [0.20, 0.25, 0.30]
     config.beta = 0.20
     config.n_ens_list = [1, 2, 4, 8, 16]
@@ -201,4 +201,18 @@ def sfcqrclaude_challenge_adamw():
         'use_spatial_attention': (False, False, True),
         'downsample_ratio' : ((2, 2, 1),) * 3
     })
+    return config
+
+def sfcqrclaude_smallnn_challenge2_2_adamw():
+    config = sfcqrclaude_smallnn_challenge_adamw()
+    config.type = "challenge2_2"
+    config.case = "a25/f0p2"  # one trajectory: a<mean angle>/f<freq>
+    config.workdir = "./results/sfcqrclaude_smallnn_challenge2_2_adamw"
+    return config
+
+def sfcqrclaude_challenge2_2_adamw():
+    config = sfcqrclaude_challenge_adamw()
+    config.type = "challenge2_2"
+    config.case = "a25/f0p2"  # one trajectory: a<mean angle>/f<freq>
+    config.workdir = "./results/sfcqrclaude_challenge2_2_adamw"
     return config

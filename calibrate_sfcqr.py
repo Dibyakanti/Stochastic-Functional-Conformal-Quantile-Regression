@@ -290,6 +290,12 @@ def main(_):
     gt, obs, times = load_challenge_da_data(
         data_dir=cfg.data_dir, time_steps=cfg.time_steps, noise_std=cfg.noise_std
     )
+  elif cfg.type == "challenge2_2":
+    out_dim = 2
+    gt, obs, times = load_challenge2_2_da_data(
+        data_dir=cfg.data_dir, case=cfg.case, time_steps=cfg.time_steps,
+        noise_std=cfg.noise_std,
+    )
 
   train_idx, cal_idx = load_split(workdir_root)
   y_train_true = gt[train_idx + 2]

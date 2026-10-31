@@ -136,6 +136,12 @@ def run_analysis(cfg):
     gt, obs, times = load_challenge_da_data(
         data_dir=cfg.data_dir, time_steps=cfg.time_steps, noise_std=cfg.noise_std
     )
+  elif cfg.type == "challenge2_2":
+    out_dim = 2
+    gt, obs, times = load_challenge2_2_da_data(
+        data_dir=cfg.data_dir, case=cfg.case, time_steps=cfg.time_steps,
+        noise_std=cfg.noise_std,
+    )
 
   unet = UNet3d(
       out_channels=out_dim,
@@ -271,6 +277,7 @@ def run_analysis(cfg):
   channel_names = {
       "beltrami": ["u", "v", "w", "p"],
       "challenge2_1": ["ux", "uy"],
+      "challenge2_2": ["ux", "uy"],
   }.get(cfg.type, ["u"])
   lr_suffix = f"lr{cfg.learning_rate}"
   folder_name = os.path.join(workdir_root, "analysis_pool_plots")
