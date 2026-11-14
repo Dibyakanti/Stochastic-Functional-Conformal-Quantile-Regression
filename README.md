@@ -325,7 +325,7 @@ analysis_pool_plots/
   SCQR_FunctionalCoverage_lineplot_<ch>_lr<lr>.png
 ```
 
-DeepONet runs use the same layout with an extra learning-rate level, `alpha_<α>/lr_<lr>/<lo|hi>/batch_<i>/{params/, meta.json, loss_log.npy}`, and also save raw metrics to `analysis_pool_metrics_lr_<lr>.npz`. Burgers plots go to `outputs/burgers/lineplot/<workdir name>_pool/`; Beltrami-DON plots go to `<workdir>/analysis_pool_plots/`.
+DeepONet runs use the same layout with an extra learning-rate level, `alpha_<α>/lr_<lr>/<lo|hi>/batch_<i>/{params/, meta.json, loss_log.npy}`, and also save raw metrics to `analysis_pool_metrics_lr_<lr>.npz`. Plots go to `<workdir>/analysis_pool_plots/`.
 
 Checkpoints (`results/*/alpha*`) are gitignored; `split.npz`, the plots and the metric files are committed.
 

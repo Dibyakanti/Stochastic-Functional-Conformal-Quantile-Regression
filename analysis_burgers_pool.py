@@ -11,7 +11,7 @@ subsets saved by `calibrate_burgers_pool.py` and builds, on the test functions,
 Each ensemble size contributes one point per repeat, so the line plots show a
 mean with a shaded error band.
 
-Plots: ./outputs/burgers/lineplot/<workdir name>_pool/
+Plots: <workdir>/analysis_pool_plots/
 Raw metrics: <workdir>/analysis_pool_metrics_lr_<lr>.npz
 
 Usage:
@@ -33,7 +33,6 @@ from ml_collections import config_flags
 
 sys.path.append("./")
 
-from utils.burgersUtils import plot_line
 from utils.burgers_pool_utils import (
     discover_batch_dirs,
     generate_function_data,
@@ -46,6 +45,7 @@ from utils.burgers_pool_utils import (
     sfcqr_consensus,
     sfcqr_delta,
 )
+from utils.plot_utils import plot_line
 
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", "configs/burgers_config.py")
@@ -63,9 +63,8 @@ def plot_functional_coverage(s, func_cov, alpha, beta, folder_name, filename):
   plt.ylabel("Functional Coverage Fraction")
   plt.title(rf"Functional coverage vs $s$ (target $1-\beta$ = {1 - beta:.2f})")
   plt.legend(title=r"$\alpha$")
-  out_dir = f"./outputs/burgers/lineplot/{folder_name}/"
-  os.makedirs(out_dir, exist_ok=True)
-  plt.savefig(f"{out_dir}/{filename}.png", bbox_inches="tight")
+  os.makedirs(folder_name, exist_ok=True)
+  plt.savefig(f"{folder_name}/{filename}.png", bbox_inches="tight")
   plt.close()
 
 
@@ -73,7 +72,7 @@ def main(_):
   cfg = FLAGS.config
   jax_config.update("jax_enable_x64", True)
   workdir_root = os.path.abspath(cfg.workdir)
-  folder_name = os.path.basename(os.path.normpath(cfg.workdir)) + "_pool"
+  folder_name = os.path.join(workdir_root, "analysis_pool_plots")
 
   # delta must match calibration, which takes it from the training functions.
   _, _, s_all = generate_function_data(cfg)

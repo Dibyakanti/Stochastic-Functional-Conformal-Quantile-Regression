@@ -5,7 +5,7 @@
 # Usage (from anywhere):
 #   bash sbatch_scripts/burgers/pool_burgers_analysis_sfcqr_docker.sh
 #   EXP_NAME=burgers_sfcqr_d5 bash sbatch_scripts/burgers/pool_burgers_analysis_sfcqr_docker.sh
-# Plots go to ./outputs/burgers/lineplot/<workdir name>_pool/.
+# Plots go to <workdir>/analysis_pool_plots/.
 #
 # Run inside tmux/screen (or with nohup) so it survives SSH disconnects.
 
