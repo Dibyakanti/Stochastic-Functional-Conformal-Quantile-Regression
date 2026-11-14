@@ -1,21 +1,28 @@
-"""GIF animations of the SFCQR-calibrated prediction band, for the README.
+"""vape4d-style GIF animations of the SFCQR prediction band, for the README.
 
-Works with every preset: the problem is taken from `cfg.type`.
+Reproduces the look of vape4d (https://github.com/KeKsBoTer/vape4d) with
+pyvista/VTK, without calling vape4d:
+  - emission-absorption ray marching, no lighting or shading;
+  - opacity transfer function `diverging_alpha`, alpha(x) = |2x - 1| over the
+    colour range (transparent at mid-range, opaque at both ends), applied per
+    box length (`distance_scale` = 1 means alpha is the opacity of one box
+    length of constant value, as in vape4d's shader);
+  - orthographic camera looking from the (-1, -1, -1) corner at the centre;
+  - black background, no bounding box or axes;
+  - vmin / vmax from the min / max of the data;
+  - linear interpolation in time between snapshots (`--interp` sub-steps).
 
-  beltrami, ks3d            3D volume rendering with pyvista (off screen), in the
-                            style of vape4d (diverging colormap whose opacity
-                            grows towards both ends) but without vape4d itself.
-                            One GIF per channel: truth | lower | upper |
-                            interval width | uncovered voxels.
-  challenge2_1, challenge2_2
-                            2D fields with matplotlib. One GIF, one column per
-                            channel: truth | lower | upper | width | uncovered.
-  burgers                   One test viscosity on a dense (x, t) grid: truth,
-                            consensus bounds and calibrated band over time, plus
-                            an x-t map of the band width with the uncovered
-                            points. For d > 1 the solution only depends on
-                            sum(x_i), so it is drawn along the diagonal
-                            x_i = xi / d.
+Every problem is rendered as a 3D volume animated over time, side by side
+panels truth | lower bound | upper bound | interval width (`--panels` also
+accepts `uncovered`). Truth and both bounds share one colour range (that of
+the truth), so the bounds can be compared with the truth directly.
+
+  beltrami, ks3d   the field on its 3D grid, test snapshots t.
+  burgers          the solution u(x_1, x_2, x_3, t) on an n^3 grid of
+                   [xmin, xmax]^3 for one test viscosity (d > 3: x_4.. = 0;
+                   d < 3: constant along the unused axes).
+  challenge2_*     2D fields: the same colour / opacity transfer, composited
+                   over black (a one-voxel-thick volume seen from above).
 
 Exactly one calibration draw is replayed: (alpha, s, repeat) picks a row of
 `qp_by_ensemble_size.npz`, and its Q_p is used with the *same* lo/hi members
@@ -24,8 +31,7 @@ that produced it (as in the analysis scripts). The band is
 Field problems use the analysis test snapshots: input obs[2 + 2k], truth
 gt[4 + 2k], k < n_steps.
 
-Usage (run from the repository root; on CSF3 use
-sbatch_scripts/animations.sbatch):
+Usage (from the repository root; on CSF3 use sbatch_scripts/animations.sbatch):
   python animations.py --config=configs/config.py:sfcqr_beltrami_adamw \
       --batch_n_ens=16 --channel=u
   python animations.py --config=configs/config.py:sfcqr_challenge_adamw \
@@ -33,7 +39,8 @@ sbatch_scripts/animations.sbatch):
   python animations.py --config=configs/burgers_config.py:burgers_sfcqr_d3
 
 Output: <out_dir>/<name>.gif (default name: the workdir name, default out_dir:
-assets/animations). 3D problems with --channel=all write <name>_<channel>.gif.
+assets/animations). With --channel=all and several channels, 3D problems write
+<name>_<channel>.gif.
 """
 
 import os
@@ -50,7 +57,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, Normalize
+from matplotlib.colors import Normalize
 import numpy as np
 from PIL import Image
 
@@ -72,19 +79,26 @@ flags.DEFINE_float("alpha", None, "Miscoverage level to animate. Default: the "
 flags.DEFINE_integer("n_ens_sub", None, "Sub-ensemble size s. Default: the "
                      "largest calibrated one.")
 flags.DEFINE_integer("repeat", 0, "Which calibration repeat (member subset) to use.")
-flags.DEFINE_string("channel", "all", "Field problems: channel name (e.g. u, p, "
-                    "ux) or 'all'. 3D problems write one GIF per channel.")
-flags.DEFINE_integer("n_steps", None, "Number of frames. Default: "
-                     "cfg.num_unroll_steps for field problems, 60 for Burgers.")
+flags.DEFINE_string("channel", "all", "Channel name (e.g. u, p, ux) or 'all'.")
+flags.DEFINE_string("panels", "truth,lower,upper,width", "Comma-separated "
+                    "panels from truth, lower, upper, width, uncovered.")
+flags.DEFINE_integer("n_steps", None, "Number of snapshots. Default: "
+                     "cfg.num_unroll_steps for field problems, 20 for Burgers.")
+flags.DEFINE_integer("interp", 3, "Linearly interpolated frames between two "
+                     "snapshots (vape4d's temporal interpolation); 1 = none.")
+flags.DEFINE_float("distance_scale", 1.0, "vape4d distance_scale: opacity "
+                   "multiplier per box length.")
+flags.DEFINE_string("cmap", "RdBu_r", "Colormap for truth / bounds.")
+flags.DEFINE_string("width_cmap", "magma", "Colormap for the interval width.")
 flags.DEFINE_integer("fn_idx", None, "Burgers: index of the test viscosity "
                      "(0 .. N_test - 1). Default: the middle one.")
 flags.DEFINE_float("lr", None, "Burgers: learning rate of the pool. Default: "
                    "cfg.lr_list[0].")
-flags.DEFINE_integer("n_x", 200, "Burgers: number of spatial grid points.")
+flags.DEFINE_integer("burgers_res", 40, "Burgers: grid points per axis.")
 flags.DEFINE_string("out_dir", "assets/animations", "Output directory.")
 flags.DEFINE_string("name", None, "Output file stem. Default: workdir name.")
-flags.DEFINE_integer("fps", 4, "Frames per second of the GIF.")
-flags.DEFINE_integer("window_size", 420, "3D: pixel size of each pyvista panel.")
+flags.DEFINE_integer("fps", 10, "Frames per second of the GIF.")
+flags.DEFINE_integer("window_size", 400, "Pixel size of each 3D panel.")
 
 QP_FILENAME = "qp_by_ensemble_size.npz"
 CHANNELS = {
@@ -92,8 +106,13 @@ CHANNELS = {
     "ks3d": ["u"],
     "challenge2_1": ["ux", "uy"],
     "challenge2_2": ["ux", "uy"],
+    "burgers": ["u"],
 }
-UNCOVERED_CMAP = ListedColormap(["#eeeeee", "#d62728"])
+PANEL_TITLES = {
+    "truth": "truth", "lower": "lower bound", "upper": "upper bound",
+    "width": "interval width", "uncovered": "uncovered",
+}
+N_TF = 256  # entries of the colour / opacity lookup, as in vape4d
 
 
 # --------------------------------------------------------------------------
@@ -144,14 +163,11 @@ def sfcqr_band(reps_lo, reps_hi, qp, delta, variant):
   return qbar_lo - qp * sigma, qbar_hi + qp * sigma, qbar_lo, qbar_hi
 
 
+
+
 # --------------------------------------------------------------------------
 # Output helpers
 # --------------------------------------------------------------------------
-
-
-def fig_to_array(fig):
-  fig.canvas.draw()
-  return np.asarray(fig.canvas.buffer_rgba())[..., :3].copy()
 
 
 def write_gif(frames, path, fps):
@@ -168,23 +184,6 @@ def write_gif(frames, path, fps):
 def out_stem(cfg):
   return FLAGS.name or os.path.basename(os.path.normpath(cfg.workdir))
 
-
-def add_colorbar(fig, ax, cmap, clim, hidden=False):
-  sm = plt.cm.ScalarMappable(norm=Normalize(*clim), cmap=cmap)
-  cb = fig.colorbar(sm, ax=ax, orientation="horizontal", fraction=0.05, pad=0.03)
-  cb.ax.tick_params(labelsize=8)
-  if hidden:  # keeps every panel the same height
-    cb.ax.set_visible(False)
-  return cb
-
-
-def field_clim(truth):
-  """Colour limits for a signed field: symmetric about 0 if it changes sign."""
-  lo, hi = np.percentile(truth, [1, 99])
-  if lo < 0 < hi:
-    m = max(-lo, hi)
-    return (-m, m), True
-  return (lo, hi), False
 
 
 # --------------------------------------------------------------------------
@@ -294,6 +293,7 @@ def field_band(cfg):
       truth=truth, lo=lo.astype(np.float32), hi=hi.astype(np.float32),
       times=times[in_idx + 2], alpha=alpha, s=s, qp=qp,
       channels=CHANNELS.get(cfg.type, [f"c{i}" for i in range(out_dim)]),
+      label=cfg.type,
   )
 
 
@@ -305,209 +305,267 @@ def selected_channels(names):
   return [names.index(FLAGS.channel)]
 
 
-# ---- 3D (pyvista) --------------------------------------------------------
+
+def selected_panels():
+  panels = [p.strip() for p in FLAGS.panels.split(",") if p.strip()]
+  bad = [p for p in panels if p not in PANEL_TITLES]
+  if bad:
+    raise ValueError(f"Unknown panels {bad}; choose from {list(PANEL_TITLES)}")
+  return panels
+
+
+# --------------------------------------------------------------------------
+# vape4d-style transfer functions and time interpolation
+# --------------------------------------------------------------------------
+
+
+def diverging_alpha(n=N_TF):
+  """vape4d.utils.diverging_alpha: alpha(x) = |2x - 1|."""
+  return np.abs(2 * np.arange(n) / n - 1)
+
+
+def linear_increasing_alpha(n=N_TF):
+  """vape4d.utils.linear_increasing_alpha: alpha(x) = x."""
+  return np.arange(n) / (n - 1)
+
+
+def interp_time(a, sub):
+  """Linear interpolation along axis 0 with `sub` frames per interval
+  (vape4d's temporal_interpolation='linear')."""
+  if sub <= 1 or a.shape[0] < 2:
+    return a
+  s = np.linspace(0, a.shape[0] - 1, (a.shape[0] - 1) * sub + 1)
+  i0 = np.minimum(np.floor(s).astype(int), a.shape[0] - 2)
+  w = (s - i0).reshape(-1, *([1] * (a.ndim - 1)))
+  return (1 - w) * a[i0] + w * a[i0 + 1]
+
+
+def panel_volumes(truth, lo, hi):
+  """Per-panel arrays [T, ...] and their (cmap, clim, alpha) styles."""
+  width = hi - lo
+  uncovered = ((truth < lo) | (truth > hi)).astype(np.float32)
+  vmin, vmax = float(truth.min()), float(truth.max())
+  if vmax <= vmin:
+    vmax = vmin + 1e-6
+  field = (FLAGS.cmap, (vmin, vmax), diverging_alpha())
+  vols = {
+      "truth": (truth, field),
+      "lower": (lo, field),
+      "upper": (hi, field),
+      "width": (width, (FLAGS.width_cmap, (0.0, float(max(width.max(), 1e-12))),
+                        linear_increasing_alpha())),
+      "uncovered": (uncovered, ("Reds", (0.0, 1.0), linear_increasing_alpha())),
+  }
+  return {p: vols[p] for p in selected_panels()}
+
+
+# --------------------------------------------------------------------------
+# Frame composition (black background, white text, slim colour bars)
+# --------------------------------------------------------------------------
+
+
+def compose_frame(images, titles, styles, header, panel_inches=3.2):
+  n = len(images)
+  h, w = images[0].shape[:2]
+  fig, axes = plt.subplots(
+      1, n, figsize=(panel_inches * n, panel_inches * h / w + 0.9),
+      facecolor="black", squeeze=False,
+  )
+  for ax, img, title, (cmap, clim, _) in zip(axes[0], images, titles, styles):
+    ax.imshow(img)
+    ax.set_axis_off()
+    ax.set_title(title, color="white", fontsize=10)
+    sm = plt.cm.ScalarMappable(norm=Normalize(*clim), cmap=cmap)
+    cb = fig.colorbar(sm, ax=ax, orientation="horizontal", fraction=0.04, pad=0.02)
+    cb.outline.set_edgecolor("white")
+    cb.ax.tick_params(colors="white", labelsize=7)
+  fig.suptitle(header, color="white", fontsize=10)
+  fig.tight_layout()
+  fig.canvas.draw()
+  frame = np.asarray(fig.canvas.buffer_rgba())[..., :3].copy()
+  plt.close(fig)
+  return frame
+
+
+def frame_header(band, name, k_key, t, coverage):
+  return (
+      f"{band['label']}  [{name}]   t = {t:.3f}   |   "
+      rf"$\alpha$ = {band['alpha']}, $s$ = {band['s']}, "
+      rf"$Q_p$ = {band['qp'][band['channels'].index(name)]:.3g}   |   "
+      f"coverage {100 * coverage[k_key]:.1f}% "
+      f"(target {100 * (1 - band['alpha']):.0f}%)"
+  )
+
+
+# --------------------------------------------------------------------------
+# 3D: pyvista volume rendering, vape4d look
+# --------------------------------------------------------------------------
+
+
+def start_xvfb():
+  """Starts a private Xvfb server and points DISPLAY at it. (pyvista >= 0.45
+  dropped `pyvista.start_xvfb`; without an X server the VTK build in the
+  container renders blank images.)"""
+  import atexit
+  import shutil
+  import subprocess
+  import time
+
+  if not shutil.which("Xvfb"):
+    print("Xvfb not found; rendering without an X server")
+    return
+  display = f":{100 + os.getpid() % 800}"
+  proc = subprocess.Popen(
+      ["Xvfb", display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+  )
+  atexit.register(proc.terminate)
+  time.sleep(2)
+  if proc.poll() is not None:
+    raise RuntimeError(f"Xvfb {display} exited with code {proc.returncode}")
+  os.environ["DISPLAY"] = display
+  print(f"started Xvfb on {display}")
 
 
 def setup_pyvista():
+  if not os.environ.get("DISPLAY"):
+    start_xvfb()
   import pyvista as pv
 
   pv.OFF_SCREEN = True
-  if not os.environ.get("DISPLAY"):
-    try:
-      pv.start_xvfb()
-    except Exception as e:  # EGL / OSMesa VTK builds need no X server
-      print(f"pyvista.start_xvfb() failed ({e}); trying without it")
   return pv
 
 
-def opacity_tf(diverging, peak=0.55, n=64):
-  """Opacity transfer function: vape4d-like `diverging_alpha` (transparent in
-  the middle, opaque at both ends) or a sequential ramp."""
-  x = np.linspace(-1, 1, n) if diverging else np.linspace(0, 1, n)
-  return peak * np.abs(x) ** 1.5
-
-
-class VolumeRenderer:
+class VapeRenderer:
+  """One square panel per call: volume in a unit-ish box, no box drawn."""
 
   def __init__(self, pv, shape, window_size):
     self.pv = pv
-    nx, ny, nz = shape
-    # Fields live on [-1, 1]^3 (Beltrami); the box is only for display.
-    self.grid = pv.ImageData(
-        dimensions=(nx, ny, nz),
-        spacing=(2 / (nx - 1), 2 / (ny - 1), 2 / (nz - 1)),
-        origin=(-1, -1, -1),
-    )
-    self.points = np.asarray(self.grid.points)  # Fortran order, x fastest
+    n = max(shape)
+    h = 1.0 / (n - 1)  # longest side has length 1
+    self.grid = pv.ImageData(dimensions=shape, spacing=(h, h, h), origin=(0, 0, 0))
+    self.box_len = h * (n - 1)
     self.window_size = window_size
 
-  def _plotter(self):
-    pl = self.pv.Plotter(off_screen=True, window_size=(self.window_size,) * 2)
-    pl.set_background("white")
-    pl.add_mesh(self.grid.outline(), color="black", line_width=1.5)
-    return pl
+  def render(self, vol, cmap, clim, alpha):
+    pv = self.pv
+    grid = self.grid.copy()
+    # arrays are indexed [x, y, z] (meshgrid indexing="ij") -> Fortran order
+    grid.point_data["f"] = np.clip(vol, *clim).ravel(order="F").astype(np.float32)
 
-  def _shoot(self, pl):
-    pl.camera_position = "iso"
-    pl.camera.zoom(1.15)
+    pl = pv.Plotter(off_screen=True, window_size=(self.window_size,) * 2)
+    pl.set_background("black")
+    actor = pl.add_volume(
+        grid, scalars="f", cmap=cmap, clim=clim, opacity=alpha,
+        n_colors=N_TF, shade=False, show_scalar_bar=False,
+        opacity_unit_distance=self.box_len / FLAGS.distance_scale,
+        blending="composite",
+    )
+    try:  # trilinear sampling between voxels, as vape4d's "linear"
+      actor.prop.interpolation_type = "linear"
+    except AttributeError:
+      actor.GetProperty().SetInterpolationTypeToLinear()
+
+    # vape4d Camera::new_aabb_iso: orthographic, from the (-1,-1,-1) corner.
+    c = np.array(grid.center)
+    r = 0.5 * grid.length  # bounding-sphere radius (half the diagonal)
+    pl.enable_parallel_projection()
+    pl.camera.focal_point = c
+    pl.camera.position = c - np.ones(3) / np.sqrt(3) * r * 2.8
+    pl.camera.up = (0, 0, 1)
+    pl.camera.parallel_scale = r
+    pl.camera.clipping_range = (0.01, 1000)
     img = pl.screenshot(return_img=True)
     pl.close()
     return img
 
-  def volume(self, vol, cmap, clim, diverging):
-    grid = self.grid.copy()
-    # arrays are indexed [x, y, z] (meshgrid indexing="ij")
-    grid.point_data["f"] = np.clip(vol, *clim).ravel(order="F").astype(np.float32)
-    pl = self._plotter()
-    pl.add_volume(
-        grid, scalars="f", cmap=cmap, clim=clim,
-        opacity=opacity_tf(diverging), show_scalar_bar=False, shade=False,
-    )
-    return self._shoot(pl)
-
-  def uncovered(self, covered):
-    pl = self._plotter()
-    pts = self.points[~covered.ravel(order="F")]
-    if len(pts):
-      pl.add_points(
-          pts, color="#d62728", point_size=5, render_points_as_spheres=True,
-          opacity=0.8,
-      )
-    return self._shoot(pl)
-
 
 def animate_3d(cfg, band):
   pv = setup_pyvista()
-  truth_all, lo_all, hi_all = band["truth"], band["lo"], band["hi"]
-  renderer = VolumeRenderer(pv, truth_all.shape[1:4], FLAGS.window_size)
-
   chans = selected_channels(band["channels"])
+  renderer = VapeRenderer(pv, band["truth"].shape[1:4], FLAGS.window_size)
+  sub = max(FLAGS.interp, 1)
+  times = interp_time(band["times"], sub)
+
   for c in chans:
     name = band["channels"][c]
-    truth, lo, hi = truth_all[..., c], lo_all[..., c], hi_all[..., c]
-    width = hi - lo
-    covered = (truth >= lo) & (truth <= hi)
-    clim, diverging = field_clim(truth)
-    wlim = (0.0, float(np.percentile(width, 99)))
-    field_cmap = "RdBu_r" if diverging else "viridis"
+    truth, lo, hi = (band[k][..., c] for k in ("truth", "lo", "hi"))
+    coverage = ((truth >= lo) & (truth <= hi)).mean(axis=(1, 2, 3))
+    vols = panel_volumes(truth, lo, hi)
+    vols = {p: (interp_time(v, sub), st) for p, (v, st) in vols.items()}
 
     frames = []
-    for k in range(truth.shape[0]):
-      print(f"[{name}] frame {k + 1}/{truth.shape[0]}")
-      imgs = [
-          renderer.volume(truth[k], field_cmap, clim, diverging),
-          renderer.volume(lo[k], field_cmap, clim, diverging),
-          renderer.volume(hi[k], field_cmap, clim, diverging),
-          renderer.volume(width[k], "magma_r", wlim, False),
-          renderer.uncovered(covered[k]),
-      ]
-      cov_k = covered[k].mean()
-      titles = [
-          f"truth {name}", "lower bound", "upper bound", "interval width",
-          f"uncovered ({100 * (1 - cov_k):.1f}%)",
-      ]
-      fig, axes = plt.subplots(1, 5, figsize=(17, 4.4))
-      for i, (ax, img, title) in enumerate(zip(axes, imgs, titles)):
-        ax.imshow(img)
-        ax.set_title(title, fontsize=11)
-        ax.axis("off")
-        if i < 3:
-          add_colorbar(fig, ax, field_cmap, clim)
-        elif i == 3:
-          add_colorbar(fig, ax, "magma_r", wlim)
-        else:
-          add_colorbar(fig, ax, field_cmap, clim, hidden=True)
-      fig.suptitle(
-          f"{cfg.type}, channel {name}:  t = {band['times'][k]:.2f}   |   "
-          rf"$\alpha$ = {band['alpha']}, $s$ = {band['s']}, "
-          rf"$Q_p$ = {band['qp'][c]:.3f}   |   coverage {100 * cov_k:.1f}% "
-          rf"(target {100 * (1 - band['alpha']):.0f}%)",
-          fontsize=12,
-      )
-      fig.tight_layout()
-      frames.append(fig_to_array(fig))
-      plt.close(fig)
+    for k in range(len(times)):
+      print(f"[{name}] frame {k + 1}/{len(times)}", flush=True)
+      images = [renderer.render(v[k], *st) for v, st in vols.values()]
+      if k == 0 and all(img[..., :3].max() == 0 for img in images):
+        raise RuntimeError(
+            "Every panel rendered pure black: VTK has no working display. "
+            "Run with Xvfb available (it is in the container image)."
+        )
+      header = frame_header(band, name, int(round(k / sub)), times[k], coverage)
+      frames.append(compose_frame(
+          images, [PANEL_TITLES[p] for p in vols], [st for _, st in vols.values()],
+          header,
+      ))
 
     suffix = f"_{name}" if len(chans) > 1 else ""
     write_gif(frames, os.path.join(FLAGS.out_dir, f"{out_stem(cfg)}{suffix}.gif"),
               FLAGS.fps)
 
 
-# ---- 2D (matplotlib) -----------------------------------------------------
+# --------------------------------------------------------------------------
+# 2D (Challenge): the same transfer function composited over black
+# --------------------------------------------------------------------------
+
+
+def vape_image_2d(img, cmap, clim, alpha):
+  """Colour + opacity lookup, emitted over a black background (premultiplied
+  colour, as vape4d's shader outputs). `img` is [X, Y]; returns [Y, X, 3]."""
+  x = np.clip((img - clim[0]) / (clim[1] - clim[0]), 0, 1)
+  idx = np.minimum((x * N_TF).astype(int), N_TF - 1)
+  rgb = plt.get_cmap(cmap)(np.linspace(0, 1, N_TF))[:, :3][idx]
+  a = np.clip(alpha[idx] * FLAGS.distance_scale, 0, 1)[..., None]
+  return np.transpose(rgb * a, (1, 0, 2))[::-1]  # x right, y up
 
 
 def animate_2d(cfg, band):
   chans = selected_channels(band["channels"])
-  # (T, X, Y, 1, C) -> (T, Y, X, C) so x is horizontal in imshow.
-  def prep(a):
-    return np.transpose(a[:, :, :, 0, :], (0, 2, 1, 3))[..., chans]
+  sub = max(FLAGS.interp, 1)
+  times = interp_time(band["times"], sub)
 
-  truth, lo, hi = prep(band["truth"]), prep(band["lo"]), prep(band["hi"])
-  width = hi - lo
-  covered = (truth >= lo) & (truth <= hi)
-  names = [band["channels"][c] for c in chans]
+  per_chan = []
+  for c in chans:
+    truth, lo, hi = (band[k][:, :, :, 0, c] for k in ("truth", "lo", "hi"))
+    coverage = ((truth >= lo) & (truth <= hi)).mean(axis=(1, 2))
+    vols = panel_volumes(truth, lo, hi)
+    per_chan.append((band["channels"][c], coverage,
+                     {p: (interp_time(v, sub), st) for p, (v, st) in vols.items()}))
 
-  styles = []
-  for j in range(len(chans)):
-    clim, diverging = field_clim(truth[..., j])
-    styles.append(dict(
-        clim=clim, cmap="RdBu_r" if diverging else "viridis",
-        wlim=(0.0, float(np.percentile(width[..., j], 99))),
-    ))
-
-  ny, nx = truth.shape[1:3]
-  panel_w = 4.6
-  panel_h = panel_w * ny / nx + 0.9
-  rows = ["truth", "lower bound", "upper bound", "interval width", "uncovered"]
   frames = []
-  for k in range(truth.shape[0]):
-    fig, axes = plt.subplots(
-        len(rows), len(chans), squeeze=False,
-        figsize=(panel_w * len(chans) + 0.4, panel_h * len(rows) + 0.6),
-    )
-    for j, name in enumerate(names):
-      st = styles[j]
-      panels = [truth[k, ..., j], lo[k, ..., j], hi[k, ..., j], width[k, ..., j],
-                ~covered[k, ..., j]]
-      for i, (row, img) in enumerate(zip(rows, panels)):
-        ax = axes[i, j]
-        if i < 3:
-          ax.imshow(img, origin="lower", cmap=st["cmap"], vmin=st["clim"][0],
-                    vmax=st["clim"][1])
-          add_colorbar(fig, ax, st["cmap"], st["clim"])
-        elif i == 3:
-          ax.imshow(img, origin="lower", cmap="magma_r", vmin=st["wlim"][0],
-                    vmax=st["wlim"][1])
-          add_colorbar(fig, ax, "magma_r", st["wlim"])
-        else:
-          ax.imshow(img, origin="lower", cmap=UNCOVERED_CMAP, vmin=0, vmax=1,
-                    interpolation="nearest")
-          add_colorbar(fig, ax, "magma_r", (0, 1), hidden=True)
-          row = f"uncovered ({100 * img.mean():.1f}%)"
-        ax.set_title(f"{name}: {row}", fontsize=10)
-        ax.set_xticks([])
-        ax.set_yticks([])
-    cov_k = covered[k].mean()
-    fig.suptitle(
-        f"{cfg.type}:  t = {band['times'][k]:.3f}\n"
-        rf"$\alpha$ = {band['alpha']}, $s$ = {band['s']}, "
-        f"coverage {100 * cov_k:.1f}% (target {100 * (1 - band['alpha']):.0f}%)",
-        fontsize=11,
-    )
-    fig.tight_layout()
-    frames.append(fig_to_array(fig))
-    plt.close(fig)
-    print(f"frame {k + 1}/{truth.shape[0]}")
+  for k in range(len(times)):
+    rows = []
+    for name, coverage, vols in per_chan:
+      images = [vape_image_2d(v[k], *st) for v, st in vols.values()]
+      header = frame_header(band, name, int(round(k / sub)), times[k], coverage)
+      rows.append(compose_frame(
+          images, [PANEL_TITLES[p] for p in vols], [st for _, st in vols.values()],
+          header, panel_inches=3.6,
+      ))
+    frames.append(np.concatenate(rows, axis=0))
+    print(f"frame {k + 1}/{len(times)}", flush=True)
 
-  write_gif(frames, os.path.join(FLAGS.out_dir, f"{out_stem(cfg)}.gif"), FLAGS.fps)
+  suffix = "" if FLAGS.channel == "all" else f"_{FLAGS.channel}"
+  write_gif(frames, os.path.join(FLAGS.out_dir, f"{out_stem(cfg)}{suffix}.gif"),
+            FLAGS.fps)
 
 
 # --------------------------------------------------------------------------
-# Burgers (DeepONet)
+# Burgers (DeepONet): band on a 3D grid, same layout as the field problems
 # --------------------------------------------------------------------------
 
 
-def animate_burgers(cfg):
+def burgers_band(cfg):
   from jax import config as jax_config
   jax_config.update("jax_enable_x64", True)
 
@@ -518,6 +576,7 @@ def animate_burgers(cfg):
       generate_function_data,
       load_split as load_don_split,
       make_pool_predictor,
+      predict_pool as predict_don_pool,
       quantile_dir,
       restore_pool_params,
       sfcqr_delta,
@@ -531,94 +590,55 @@ def animate_burgers(cfg):
   s, qp, lo_idx, hi_idx = pick_draw(
       os.path.join(workdir_root, f"alpha_{alpha}", f"lr_{lr}", QP_FILENAME)
   )
-  qp = float(qp[0])
-  print(f"alpha={alpha}, lr={lr}, s={s}, repeat={FLAGS.repeat}, Q_p={qp:.4f}")
+  print(f"alpha={alpha}, lr={lr}, s={s}, repeat={FLAGS.repeat}, Q_p={qp}")
 
   _, _, s_all = generate_function_data(cfg)
   idx_train, _ = load_don_split(workdir_root)
   delta = sfcqr_delta(s_all, idx_train)
 
-  # One test viscosity, on a dense (xi, t) grid with x_i = xi / d.
   nus = _nus(cfg, cfg.N_test)
   fn_idx = FLAGS.fn_idx if FLAGS.fn_idx is not None else cfg.N_test // 2
   nu = float(nus[fn_idx])
-  d, g = cfg.dim, cfg.grid_data
-  n_t = FLAGS.n_steps or 60
-  xi = np.linspace(d * g.xmin, d * g.xmax, FLAGS.n_x)
+  d, g, n = cfg.dim, cfg.grid_data, FLAGS.burgers_res
+  n_t = FLAGS.n_steps or 20
   ts = np.linspace(g.tmin, g.tmax, n_t)
-  T, XI = np.meshgrid(ts, xi, indexing="ij")  # (n_t, n_x)
-  z = np.concatenate(
-      [np.repeat(XI.reshape(-1, 1) / d, d, axis=1), T.reshape(-1, 1)], axis=1
-  )
-  truth = np.asarray(burgers_solution(z[:, :-1], z[:, -1], nu)).reshape(n_t, -1)
-  u0 = np.asarray(initial_condition(cfg, nu))
-  u = jnp.float32(np.tile(u0, (len(z), 1)))
-  z = jnp.float32(z)
 
+  # Spatial points: (x_1, x_2, x_3) on an n^3 grid; x_4.. = 0; for d < 3 the
+  # unused grid axes are ignored (the field is constant along them).
+  ax = np.linspace(g.xmin, g.xmax, n)
+  X = np.stack(np.meshgrid(ax, ax, ax, indexing="ij"), axis=-1).reshape(-1, 3)
+  x = np.zeros((len(X), d))
+  x[:, :min(d, 3)] = X[:, :min(d, 3)]
+
+  u = jnp.float32(np.tile(np.asarray(initial_condition(cfg, nu)), (len(x), 1)))
   predictor = make_pool_predictor(cfg)
-  reps = {}
+  params = {}
   for label, idx in (("lo", lo_idx), ("hi", hi_idx)):
-    params = restore_pool_params(
+    p = restore_pool_params(
         cfg, discover_don_batches(quantile_dir(workdir_root, alpha, lr, label)), lr
     )
-    params = jax.tree.map(lambda x: x[np.asarray(idx)], params)
-    reps[label] = np.asarray(predictor(params, u, z), dtype=np.float32)
+    params[label] = jax.tree.map(lambda a, idx=np.asarray(idx): a[idx], p)
 
-  lo, hi, qbar_lo, qbar_hi = sfcqr_band(reps["lo"], reps["hi"], qp, delta,
-                                        cfg.variant)
-  lo, hi, qbar_lo, qbar_hi = (a[..., 0].reshape(n_t, -1)
-                              for a in (lo, hi, qbar_lo, qbar_hi))
-  width = hi - lo
-  covered = (truth >= lo) & (truth <= hi)
+  truth, lo, hi = [], [], []
+  for k, t in enumerate(ts):
+    print(f"Burgers: predicting t = {t:.2f} ({k + 1}/{n_t})", flush=True)
+    z = jnp.float32(np.concatenate([x, np.full((len(x), 1), t)], axis=1))
+    reps = {
+        label: predict_don_pool(predictor, params[label], u, z,
+                                FLAGS.predict_chunk_size).astype(np.float32)
+        for label in ("lo", "hi")
+    }
+    l, h, _, _ = sfcqr_band(reps["lo"], reps["hi"], qp, delta, cfg.variant)
+    lo.append(l.reshape(n, n, n, 1))
+    hi.append(h.reshape(n, n, n, 1))
+    truth.append(np.asarray(burgers_solution(x, t, nu)).reshape(n, n, n, 1))
 
-  ymin = min(truth.min(), np.percentile(lo, 1))
-  ymax = max(truth.max(), np.percentile(hi, 99))
-  pad = 0.08 * (ymax - ymin)
-  xlabel = "x" if d == 1 else rf"$\xi = \sum_i x_i$  (along $x_i = \xi/{d}$)"
-
-  frames = []
-  for k in range(n_t):
-    fig, (ax, ax2) = plt.subplots(
-        1, 2, figsize=(13, 4.6), gridspec_kw={"width_ratios": [1.5, 1]}
-    )
-    ax.fill_between(xi, lo[k], hi[k], color="tab:blue", alpha=0.25,
-                    label="calibrated band")
-    ax.plot(xi, qbar_lo[k], "--", color="tab:blue", lw=1,
-            label=r"$\bar q_{lo}$, $\bar q_{hi}$")
-    ax.plot(xi, qbar_hi[k], "--", color="tab:blue", lw=1)
-    ax.plot(xi, truth[k], "k", lw=2, label="truth")
-    miss = ~covered[k]
-    if miss.any():
-      ax.plot(xi[miss], truth[k][miss], "o", color="#d62728", ms=3,
-              label="uncovered")
-    ax.set_ylim(ymin - pad, ymax + pad)
-    ax.set_xlim(xi[0], xi[-1])
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("u")
-    ax.legend(loc="upper right", fontsize=9)
-    ax.set_title(rf"t = {ts[k]:.2f},  coverage {100 * covered[k].mean():.1f}%")
-
-    im = ax2.imshow(width, origin="lower", aspect="auto", cmap="magma_r",
-                    extent=(xi[0], xi[-1], ts[0], ts[-1]))
-    mt, mx = np.nonzero(~covered)
-    ax2.scatter(xi[mx], ts[mt], s=1, color="#1f77b4", alpha=0.6, lw=0)
-    ax2.axhline(ts[k], color="k", lw=1.2)
-    ax2.set_xlabel(xlabel)
-    ax2.set_ylabel("t")
-    ax2.set_title("band width (dots: uncovered)")
-    fig.colorbar(im, ax=ax2, fraction=0.05)
-
-    fig.suptitle(
-        rf"Burgers, $d$ = {d}, $\nu$ = {nu:.1f}   |   $\alpha$ = {alpha}, "
-        rf"$s$ = {s}, $Q_p$ = {qp:.3f}   |   overall coverage "
-        f"{100 * covered.mean():.1f}% (target {100 * (1 - alpha):.0f}%)",
-        fontsize=11,
-    )
-    fig.tight_layout()
-    frames.append(fig_to_array(fig))
-    plt.close(fig)
-
-  write_gif(frames, os.path.join(FLAGS.out_dir, f"{out_stem(cfg)}.gif"), FLAGS.fps)
+  return dict(
+      truth=np.stack(truth).astype(np.float32),
+      lo=np.stack(lo).astype(np.float32), hi=np.stack(hi).astype(np.float32),
+      times=ts, alpha=alpha, s=s, qp=qp, channels=["u"],
+      label=f"Burgers d={d}, nu={nu:.0f}",
+  )
 
 
 # --------------------------------------------------------------------------
@@ -626,10 +646,7 @@ def animate_burgers(cfg):
 
 def main(_):
   cfg = FLAGS.config
-  if cfg.type == "burgers":
-    animate_burgers(cfg)
-    return
-  band = field_band(cfg)
+  band = burgers_band(cfg) if cfg.type == "burgers" else field_band(cfg)
   if band["truth"].shape[3] == 1:  # Challenge: singleton z axis
     animate_2d(cfg, band)
   else:
