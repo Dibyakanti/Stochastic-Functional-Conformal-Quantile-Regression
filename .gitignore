@@ -10,6 +10,7 @@ beltrami_experiment*/
 */__pycache__/*
 results/*/alpha*
 results/*/analysis_plots/cubes/
+results/nocommit/
 results/old/
 singularity/
 dataset/
