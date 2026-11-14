@@ -16,7 +16,7 @@ automatically aggregate repeated x-values into a mean line with a shaded
 error band -- no plotting code changes needed.
 
 Usage (example):
-  python analysis_pool.py --config configs/config.py:sfcqrclaude_smallnn_beltrami_adamw \
+  python analysis_pool.py --config configs/config.py:sfcqr_smallnn_beltrami_adamw \
       --batch_n_ens 8
 """
 

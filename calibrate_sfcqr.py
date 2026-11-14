@@ -27,7 +27,7 @@ It always evaluates on the *same* `cal_idx` saved by `train_ensemble_pool.py`
 except to compute the fixed per-channel floor `delta`.
 
 Usage (example):
-  python calibrate_sfcqr.py --config configs/config.py:sfcqrclaude_smallnn_beltrami_adamw \
+  python calibrate_sfcqr.py --config configs/config.py:sfcqr_smallnn_beltrami_adamw \
       --batch_n_ens 8 --n_ens_sub_list 1,2,4,8 --n_repeats 20
 """
 
@@ -200,21 +200,30 @@ def predict_pool(unet, variables, observations, times, member_chunk_size=4):
   params = variables["params"]
   mutables = {k: v for k, v in variables.items() if k != "params"}
   batch_size = observations.shape[0]
-  dt = jnp.full((batch_size,), times[1] - times[0])
+  dt = jnp.full((batch_size,), times[2] - times[0])
 
   chunked_apply = _build_chunked_apply(unet)
 
   n_pool = jax.tree.leaves(params)[0].shape[0]
   chunk = min(member_chunk_size, n_pool)
 
-  outputs = []
+  # Write each chunk straight into a preallocated host array: the full pool's
+  # predictions (e.g. 160 members x 100 cal samples x 32^3 x 4 channels ~ 8 GB
+  # per quantile) do not fit on the GPU alongside the other quantile's pool,
+  # and a list + np.concatenate would briefly hold two host copies. Only the
+  # n_ens_sub members selected per draw are moved back to device.
+  out = None
   for start in range(0, n_pool, chunk):
     end = min(start + chunk, n_pool)
     p_chunk = jax.tree.map(lambda x: x[start:end], params)
     m_chunk = jax.tree.map(lambda x: x[start:end], mutables)
-    outputs.append(chunked_apply(p_chunk, m_chunk, observations, dt))
+    pred = chunked_apply(p_chunk, m_chunk, observations, dt)
+    if out is None:
+      out = np.empty((n_pool, *pred.shape[1:]), dtype=pred.dtype)
+    out[start:end] = np.asarray(pred)
+    del pred
 
-  return jnp.concatenate(outputs, axis=0)
+  return out
 
 
 def flat_resids_from_reps(

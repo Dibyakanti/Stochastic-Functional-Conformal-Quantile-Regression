@@ -27,5 +27,6 @@ fi
 singularity exec --nv ./singularity/jax-csf3_latest.sif python calibrate_sfcqr.py \
   --config=configs/config.py:${EXP_NAME} \
   --batch_n_ens=16 \
+  --predict_chunk_size=${PREDICT_CHUNK_SIZE:-4} \
   --n_ens_sub_list=1,2,4,6,8,10,12,14,16 \
   --n_repeats=5

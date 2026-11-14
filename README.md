@@ -6,9 +6,8 @@ ensembles of quantile regressors. Two model families are supported:
 
 - **UNet3d / UViT** (a 3D U-Net with axial self-attention, adapted from
   [`swirl_dynamics`](https://github.com/google-research/swirl-dynamics)),
-  learning a one-step map from a noisy field to the field `2·dt` later.
-- **DeepONet**, either with an MLP branch (Burgers) or with the UViT encoder as
-  the branch (Beltrami).
+  learning a one-step map from a noisy field to the field `t` later.
+- **DeepONet**
 
 Everything is written in JAX / Flax and runs on a single GPU.
 
@@ -19,8 +18,49 @@ Problems:
 | `beltrami` | 3D Beltrami flow (exact Navier–Stokes solution) | analytic, [data/beltramiDataGeneration.py](data/beltramiDataGeneration.py) | `res³` on `[-1,1]³` | u, v, w, p |
 | `ks3d` | 3D Kuramoto–Sivashinsky | simulated with [APEBench](https://github.com/tum-pbs/apebench), [data/ks3dDataGeneration.py](data/ks3dDataGeneration.py) | `res³`, periodic | u |
 | `challenge2_1` | 2D flow, Challenge 2.1 | HDF5 files in `./dataset`, [data/challengeDataLoading.py](data/challengeDataLoading.py) | 152 × 48 × 1 | ux, uy |
-| `challenge2_2` | 2D pitching airfoil, Challenge 2.2 (one `case`) | HDF5 files in `./dataset` | 56 × 56 × 1 | ux, uy |
+<!-- | `challenge2_2` | 2D pitching airfoil, Challenge 2.2 (one `case`) | HDF5 files in `./dataset` | 56 × 56 × 1 | ux, uy | -->
 | `burgers` | d-dimensional viscous Burgers (DeepONet only) | analytic, [data/burgersDataGeneration.py](data/burgersDataGeneration.py) | random points in `[-5,5]^d × [0,10]` | u |
+
+---
+
+## Animations
+
+<!--
+  Put the files in assets/animations/ with the names below.
+  GIFs render inline from a relative path. GitHub only plays .mp4 inline when it
+  is uploaded through the web editor (drag it into the README edit box, which
+  gives a https://github.com/user-attachments/... URL); a committed .mp4 shows
+  as a plain link. Keep each file under ~10 MB.
+-->
+
+### Burgers: DeepONet
+
+<p align="center">
+  <img src="assets/animations/burgers_don.gif" alt="SFCQR prediction band of the DeepONet on viscous Burgers" width="600">
+</p>
+
+*TODO: caption. For example: true solution and calibrated band
+`[q̄_lo − Q_p·σ, q̄_hi + Q_p·σ]` over time for one test viscosity, with
+`α = 0.2`, `β = 0.2` and `s = 16` members.*
+
+### Beltrami flow: UViT
+
+<p align="center">
+  <img src="assets/animations/beltrami_uvit.gif" alt="SFCQR prediction band of the UViT on 3D Beltrami flow" width="600">
+</p>
+
+*TODO: caption. For example: true field, lower and upper bounds and interval
+width for one channel over the test snapshots, preset
+`sfcqr_beltrami_adamw`.*
+
+### Challenge 2.1: UViT
+
+<p align="center">
+  <img src="assets/animations/challenge2_1_uvit.gif" alt="SFCQR prediction band of the UViT on Challenge 2.1" width="600">
+</p>
+
+*TODO: caption. For example: true `ux`/`uy`, calibrated bounds and covered
+points over the test snapshots, preset `sfcqr_challenge_adamw`.*
 
 ---
 
@@ -114,6 +154,7 @@ standard deviation.
 ├── sbatch_scripts/{beltrami,burgers,challenge,ks3d}/
 │                                   # Slurm (*.sbatch) and Docker (*_docker.sh) launchers
 ├── results/                        # per-experiment outputs (see below)
+├── assets/animations/              # GIFs shown in the README
 ├── old_scripts/                    # superseded single-run pipelines (kept for reference)
 └── Dockerfile                      # environment (NVIDIA JAX image + deps)
 ```
@@ -162,16 +203,16 @@ UNet on Beltrami / KS3D / Challenge (presets from [configs/config.py](configs/co
 mkdir -p outputs/slurm
 
 # 1. Train the pool: 10 batches × 16 members, sequentially in one job ...
-EXP_NAME=sfcqrclaude_beltrami_adamw sbatch sbatch_scripts/beltrami/pool_beltrami_sfcqr.sbatch
+EXP_NAME=sfcqr_beltrami_adamw sbatch sbatch_scripts/beltrami/pool_beltrami_sfcqr.sbatch
 #    ... or one array task per batch (create split.npz first, e.g. by running
 #    batch 0 alone with --array=0, so tasks don't race to create it)
-EXP_NAME=sfcqrclaude_beltrami_adamw sbatch sbatch_scripts/beltrami/pool_beltrami_array_sfcqr.sbatch
+EXP_NAME=sfcqr_beltrami_adamw sbatch sbatch_scripts/beltrami/pool_beltrami_array_sfcqr.sbatch
 
 # 2. Calibrate (s = 1,2,4,…,16, 5 repeats each)
-EXP_NAME=sfcqrclaude_beltrami_adamw sbatch sbatch_scripts/beltrami/pool_beltrami_calibrate_sfcqr.sbatch
+EXP_NAME=sfcqr_beltrami_adamw sbatch sbatch_scripts/beltrami/pool_beltrami_calibrate_sfcqr.sbatch
 
 # 3. Analyse
-EXP_NAME=sfcqrclaude_beltrami_adamw sbatch sbatch_scripts/beltrami/pool_analysis_beltrami_calibrate_sfcqr.sbatch
+EXP_NAME=sfcqr_beltrami_adamw sbatch sbatch_scripts/beltrami/pool_analysis_beltrami_calibrate_sfcqr.sbatch
 ```
 
 Set `PREDICT_CHUNK_SIZE` (default 4 for calibration, 8 for analysis) lower if
@@ -198,9 +239,9 @@ bash sbatch_scripts/beltrami/pool_beltrami_don_calibrate_sfcqr_docker.sh
 bash sbatch_scripts/beltrami/pool_beltrami_don_analysis_sfcqr_docker.sh
 
 # Challenge data (UNet)
-EXP_NAME=sfcqrclaude_challenge_adamw bash sbatch_scripts/challenge/pool_challenge_sfcqr_docker.sh
-EXP_NAME=sfcqrclaude_challenge_adamw bash sbatch_scripts/challenge/pool_challenge_calibrate_sfcqr_docker.sh
-EXP_NAME=sfcqrclaude_challenge_adamw bash sbatch_scripts/challenge/pool_challenge_analysis_sfcqr_docker.sh
+EXP_NAME=sfcqr_challenge_adamw bash sbatch_scripts/challenge/pool_challenge_sfcqr_docker.sh
+EXP_NAME=sfcqr_challenge_adamw bash sbatch_scripts/challenge/pool_challenge_calibrate_sfcqr_docker.sh
+EXP_NAME=sfcqr_challenge_adamw bash sbatch_scripts/challenge/pool_challenge_analysis_sfcqr_docker.sh
 
 # Beltrami, larger dataset (~100 train / 100 cal / 100 test): all three steps
 # in one script; re-running skips batches that already have a final checkpoint
@@ -244,11 +285,11 @@ fields:
 | `num_unroll_steps` | Number of test snapshots |
 | `workdir` | Output directory, `./results/<preset name>` |
 
-Main UNet presets: `sfcqrclaude_[smallnn_]beltrami_adamw`,
-`sfcqrclaude_smallnn_beltrami_adamw_trainlonger`,
-`sfcqrclaude_beltrami_adamw_n100`, `sfcqrclaude_[smallnn_]ks_adamw`,
-`sfcqrclaude_[smallnn_]challenge_adamw`,
-`sfcqrclaude_[smallnn_]challenge2_2_adamw`. `smallnn` variants use a two-level
+Main UNet presets: `sfcqr_[smallnn_]beltrami_adamw`,
+`sfcqr_smallnn_beltrami_adamw_trainlonger`,
+`sfcqr_beltrami_adamw_n100`, `sfcqr_[smallnn_]ks_adamw`,
+`sfcqr_[smallnn_]challenge_adamw`,
+`sfcqr_[smallnn_]challenge2_2_adamw`. `smallnn` variants use a two-level
 U-Net.
 
 DeepONet presets:
@@ -259,7 +300,7 @@ DeepONet presets:
 - [configs/beltrami_don_config.py](configs/beltrami_don_config.py):
   `beltrami_don_sfcqr` (cyclic-symmetry augmentation, hold-then-cosine lr),
   `beltrami_don_sfcqr_baseline`, `beltrami_don_sfcqr_smoke`. The data and split
-  match `sfcqrclaude_smallnn_beltrami_adamw`, so it is directly comparable to
+  match `sfcqr_smallnn_beltrami_adamw`, so it is directly comparable to
   the UNet run.
 
 The `*_smoke` presets finish in minutes and are useful for checking a pipeline

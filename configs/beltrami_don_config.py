@@ -11,7 +11,7 @@ trunk is an MLP on (x, y, z). A single DeepONet outputs all four channels
 (u, v, w, p).
 
 Data values (res, time_steps, dt, noise_std, seed) match
-`presets.sfcqrclaude_smallnn_beltrami_adamw`, so the train/cal split is the
+`presets.sfcqr_smallnn_beltrami_adamw`, so the train/cal split is the
 same set of time indices as the UNet run.
 """
 
@@ -59,7 +59,7 @@ def beltrami_don_sfcqr():
     config.channels = ["u", "v", "w", "p"]
     config.model = config_dict.ConfigDict({
         # UNet3d encoder settings: the structure of
-        # presets.sfcqrclaude_beltrami_adamw at half the width and half the
+        # presets.sfcqr_beltrami_adamw at half the width and half the
         # blocks (the full size fits the input noise of the few training
         # fields). res must be divisible by the product of downsample_ratio.
         "branch": {

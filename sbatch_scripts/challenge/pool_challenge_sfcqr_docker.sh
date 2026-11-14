@@ -4,7 +4,7 @@
 #
 # Usage (from anywhere):
 #   bash sbatch_scripts/challenge/pool_challenge_sfcqr_docker.sh
-#   EXP_NAME=sfcqrclaude_challenge_adamw bash sbatch_scripts/challenge/pool_challenge_sfcqr_docker.sh
+#   EXP_NAME=sfcqr_challenge_adamw bash sbatch_scripts/challenge/pool_challenge_sfcqr_docker.sh
 #
 # Run inside tmux/screen (or with nohup) so it survives SSH disconnects.
 
@@ -13,7 +13,7 @@ set -euo pipefail
 # Run from the repo root so relative paths in the config resolve
 cd "$(dirname "$0")/../.."
 
-export EXP_NAME=${EXP_NAME:-sfcqrclaude_smallnn_challenge_adamw}
+export EXP_NAME=${EXP_NAME:-sfcqr_smallnn_challenge_adamw}
 IMAGE=${IMAGE:-dibyakanti/jax-csf3:latest}
 
 mkdir -p ./outputs/docker

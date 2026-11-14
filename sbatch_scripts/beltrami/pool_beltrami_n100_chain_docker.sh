@@ -1,5 +1,5 @@
 #!/bin/bash
-# Train pool -> calibrate -> analysis for sfcqrclaude_beltrami_adamw with
+# Train pool -> calibrate -> analysis for sfcqr_beltrami_adamw with
 # ~100 train / 100 cal / 100 test samples (time_steps=410, dt=0.02 keeps the
 # same t in [0, 8] horizon as the base preset), on a single-GPU machine.
 #
@@ -12,9 +12,9 @@ set -uo pipefail
 # Run from the repo root so relative paths in the config resolve
 cd "$(dirname "$0")/../.."
 
-export EXP_NAME=${EXP_NAME:-sfcqrclaude_beltrami_adamw}
+export EXP_NAME=${EXP_NAME:-sfcqr_beltrami_adamw}
 IMAGE=${IMAGE:-dibyakanti/jax-csf3:latest}
-WORKDIR=./results/sfcqrclaude_beltrami_adamw_n100
+WORKDIR=./results/sfcqr_beltrami_adamw_n100
 STEPS=4000
 OVR="--config=configs/config.py:${EXP_NAME} --config.time_steps=410 --config.dt=0.02 --config.num_unroll_steps=100 --config.total_train_steps=${STEPS} --config.workdir=${WORKDIR}"
 

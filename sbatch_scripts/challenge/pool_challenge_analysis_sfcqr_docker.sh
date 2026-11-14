@@ -9,7 +9,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-export EXP_NAME=${EXP_NAME:-sfcqrclaude_smallnn_challenge_adamw}
+export EXP_NAME=${EXP_NAME:-sfcqr_smallnn_challenge_adamw}
 IMAGE=${IMAGE:-dibyakanti/jax-csf3:latest}
 
 mkdir -p ./outputs/docker

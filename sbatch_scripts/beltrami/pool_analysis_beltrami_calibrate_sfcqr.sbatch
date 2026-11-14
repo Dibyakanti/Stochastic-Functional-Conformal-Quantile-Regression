@@ -27,4 +27,4 @@ fi
 singularity exec --nv ./singularity/jax-csf3_latest.sif python analysis_pool.py \
   --config=configs/config.py:${EXP_NAME} \
   --batch_n_ens=16 \
-  --predict_chunk_size=8
+  --predict_chunk_size=${PREDICT_CHUNK_SIZE:-8}

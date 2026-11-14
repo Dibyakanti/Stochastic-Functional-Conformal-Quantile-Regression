@@ -4,15 +4,16 @@ def get_config(variant="baseline"):
     
     options = {
         "baseline": presets.baseline(),
-        "sfcqrclaude_smallnn_ks_adamw": presets.sfcqrclaude_smallnn_ks_adamw(),
-        "sfcqrclaude_ks_adamw": presets.sfcqrclaude_ks_adamw(),
-        "sfcqrclaude_smallnn_beltrami_adamw_trainlonger": presets.sfcqrclaude_smallnn_beltrami_adamw_trainlonger(),
-        "sfcqrclaude_smallnn_beltrami_adamw": presets.sfcqrclaude_smallnn_beltrami_adamw(),
-        "sfcqrclaude_beltrami_adamw": presets.sfcqrclaude_beltrami_adamw(),
-        "sfcqrclaude_smallnn_challenge_adamw": presets.sfcqrclaude_smallnn_challenge_adamw(),
-        "sfcqrclaude_challenge_adamw": presets.sfcqrclaude_challenge_adamw(),
-        "sfcqrclaude_smallnn_challenge2_2_adamw": presets.sfcqrclaude_smallnn_challenge2_2_adamw(),
-        "sfcqrclaude_challenge2_2_adamw": presets.sfcqrclaude_challenge2_2_adamw()
+        "sfcqr_smallnn_ks_adamw": presets.sfcqr_smallnn_ks_adamw(),
+        "sfcqr_ks_adamw": presets.sfcqr_ks_adamw(),
+        "sfcqr_smallnn_beltrami_adamw_trainlonger": presets.sfcqr_smallnn_beltrami_adamw_trainlonger(),
+        "sfcqr_smallnn_beltrami_adamw": presets.sfcqr_smallnn_beltrami_adamw(),
+        "sfcqr_beltrami_adamw": presets.sfcqr_beltrami_adamw(),
+        "sfcqr_beltrami_adamw_n100": presets.sfcqr_beltrami_adamw_n100(),
+        "sfcqr_smallnn_challenge_adamw": presets.sfcqr_smallnn_challenge_adamw(),
+        "sfcqr_challenge_adamw": presets.sfcqr_challenge_adamw(),
+        "sfcqr_smallnn_challenge2_2_adamw": presets.sfcqr_smallnn_challenge2_2_adamw(),
+        "sfcqr_challenge2_2_adamw": presets.sfcqr_challenge2_2_adamw()
     }
     return options[variant]
 

@@ -25,7 +25,7 @@ repetition -- to get error bars on coverage as a function of ensemble size,
 without ever retraining anything.
 
 Usage (example):
-  python train_ensemble_pool.py --config configs/config.py:sfcqrclaude_smallnn_beltrami_adamw \
+  python train_ensemble_pool.py --config configs/config.py:sfcqr_smallnn_beltrami_adamw \
       --batch_idx 0 --batch_n_ens 8
 
 Run this with `batch_idx = 0, 1, ..., n_batches - 1` (each as a separate
