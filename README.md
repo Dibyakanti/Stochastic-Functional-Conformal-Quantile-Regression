@@ -33,7 +33,7 @@ Problems:
   as a plain link. Keep each file under ~10 MB.
 -->
 
-### Burgers: DeepONet
+<!-- ### Burgers: DeepONet
 
 <p align="center">
   <img src="assets/animations/burgers_don.gif" alt="SFCQR prediction band of the DeepONet on viscous Burgers" width="600">
@@ -41,26 +41,25 @@ Problems:
 
 *TODO: caption. For example: true solution and calibrated band
 `[q̄_lo − Q_p·σ, q̄_hi + Q_p·σ]` over time for one test viscosity, with
-`α = 0.2`, `β = 0.2` and `s = 16` members.*
+`α = 0.2`, `β = 0.2` and `s = 16` members.* -->
 
 ### Beltrami flow: UViT
 
 <p align="center">
-  <img src="assets/animations/beltrami_uvit.gif" alt="SFCQR prediction band of the UViT on 3D Beltrami flow" width="600">
+  <img src="assets/animations/beltrami_uvit.webp" alt="SFCQR prediction band of the UViT on 3D Beltrami flow" width="600">
 </p>
 
-*TODO: caption. For example: true field, lower and upper bounds and interval
-width for one channel over the test snapshots, preset
-`sfcqr_beltrami_adamw`.*
+True field, lower and upper bounds and interval width for one channel over the test snapshots, preset `sfcqr_beltrami_adamw`.
+
+<!-- *TODO: caption. For example: true field, lower and upper bounds and interval width for one channel over the test snapshots, preset `sfcqr_beltrami_adamw`.* -->
 
 ### Challenge 2.1: UViT
 
 <p align="center">
-  <img src="assets/animations/challenge2_1_uvit.gif" alt="SFCQR prediction band of the UViT on Challenge 2.1" width="600">
+  <img src="assets/animations/challenge2_1_uvit.webp" alt="SFCQR prediction band of the UViT on Challenge 2.1" width="600">
 </p>
 
-*TODO: caption. For example: true `ux`/`uy`, calibrated bounds and covered
-points over the test snapshots, preset `sfcqr_challenge_adamw`.*
+<!-- *TODO: caption. For example: true `ux`/`uy`, calibrated bounds and covered points over the test snapshots, preset `sfcqr_challenge_adamw`.* -->
 
 ---
 
@@ -148,14 +147,12 @@ standard deviation.
 ├── layers/                         # conv blocks, axial attention, resize, residual
 ├── embeddings/fourier_emb.py       # Fourier embedding of the time input
 ├── train/                          # trainer loop, train state, callbacks, models,
-│                                   #   SGLD-style optimisers (asgld, adam_sgld, ...)
 ├── utils/                          # dataloaders, plotting, pool utilities for DON runs
 │
 ├── sbatch_scripts/{beltrami,burgers,challenge,ks3d}/
-│                                   # Slurm (*.sbatch) and Docker (*_docker.sh) launchers
+│                                   # Slurm (*.sbatch) and Docker (*_docker.sh) scripts
 ├── results/                        # per-experiment outputs (see below)
-├── assets/animations/              # GIFs shown in the README
-├── old_scripts/                    # superseded single-run pipelines (kept for reference)
+├── assets/animations/              # animations shown in the README
 └── Dockerfile                      # environment (NVIDIA JAX image + deps)
 ```
 
