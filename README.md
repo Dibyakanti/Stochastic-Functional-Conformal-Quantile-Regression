@@ -79,9 +79,7 @@ For each miscoverage level `α` in `config.alpha_list`:
    `n_repeats` draws, pick `s` random lo members and `s` random hi members from
    the pool and compute
    - consensus bounds `q̄_lo`, `q̄_hi` = member means,
-   - local scale `σ = max(q̄_hi − q̄_lo, 0) + δ` (variant **A**), or with the
-     average member std added (variant **B**); `δ` is a tiny floor
-     (`1e-6 × std` of the training targets),
+   - local scale `σ = max(q̄_hi − q̄_lo, 0) + δ` ; `δ` is a tiny floor (`1e-6 × std` of the training targets),
    - normalised residual at each grid point
      `r = max(q̄_lo − y, y − q̄_hi) / σ`,
    - per-function score `S_i` = the `⌈(1−α)m⌉`-th smallest residual over the
@@ -280,7 +278,7 @@ fields:
 | `learning_rate`, `batch_size`, `total_train_steps` | Training |
 | `alpha_list` | Pointwise miscoverage levels `α` (one pair of lo/hi quantile pools each) |
 | `beta` | Functional miscoverage level `β` |
-| `variant` | Scale `σ`: `"A"` (interval width) or `"B"` (width + member spread) |
+<!-- | `variant` | Scale `σ`: `"A"` (interval width) or `"B"` (width + member spread) | -->
 | `num_unroll_steps` | Number of test snapshots |
 | `workdir` | Output directory, `./results/<preset name>` |
 
