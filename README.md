@@ -46,7 +46,7 @@ Problems:
 ### Beltrami flow: UViT
 
 <p align="center">
-  <img src="assets/animations/beltrami_uvit.webp" alt="SFCQR prediction band of the UViT on 3D Beltrami flow" width="600">
+  <img src="assets/animations/beltrami_uvit.webp" alt="SFCQR prediction band of the UViT on 3D Beltrami flow" width="900">
 </p>
 
 True field, lower and upper bounds and interval width for one channel over the test snapshots, preset `sfcqr_beltrami_adamw`.
@@ -56,8 +56,10 @@ True field, lower and upper bounds and interval width for one channel over the t
 ### Challenge 2.1: UViT
 
 <p align="center">
-  <img src="assets/animations/challenge2_1_uvit.webp" alt="SFCQR prediction band of the UViT on Challenge 2.1" width="600">
+  <img src="assets/animations/challenge2_1_uvit.webp" alt="SFCQR prediction band of the UViT on Challenge 2.1" width="900">
 </p>
+
+True `ux`/`uy`, calibrated bounds and covered points over the test snapshots, preset `sfcqr_challenge_adamw`.
 
 <!-- *TODO: caption. For example: true `ux`/`uy`, calibrated bounds and covered points over the test snapshots, preset `sfcqr_challenge_adamw`.* -->
 
