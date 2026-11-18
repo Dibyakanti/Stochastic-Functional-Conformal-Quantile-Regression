@@ -43,13 +43,13 @@ Problems:
 `[q̄_lo − Q_p·σ, q̄_hi + Q_p·σ]` over time for one test viscosity, with
 `α = 0.2`, `β = 0.2` and `s = 16` members.* -->
 
-### Beltrami flow: UViT
+<!-- ### Beltrami flow: UViT
 
 <p align="center">
   <img src="assets/animations/beltrami_uvit.webp" alt="SFCQR prediction band of the UViT on 3D Beltrami flow" width="900">
 </p>
 
-True field, lower and upper bounds and interval width for one channel over the test snapshots, preset `sfcqr_beltrami_adamw`.
+True field, lower and upper bounds and interval width for one channel over the test snapshots, preset `sfcqr_beltrami_adamw`. -->
 
 <!-- *TODO: caption. For example: true field, lower and upper bounds and interval width for one channel over the test snapshots, preset `sfcqr_beltrami_adamw`.* -->
 
