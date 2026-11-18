@@ -283,6 +283,7 @@ def load_field_data(cfg):
     gt, obs, _, times = generate_beltrami_da_data(
         spatial_res=cfg.res, time_steps=cfg.time_steps, dt=cfg.dt,
         a=1.0, d=1.0, noise_std=cfg.noise_std,
+        domain=cfg.get("domain", 1.0),
     )
   elif cfg.type == "ks3d":
     from data.ks3dDataGeneration import generate_ks3d_da_data
@@ -362,6 +363,7 @@ def field_band(cfg):
       num_channels=cfg.model.num_channels,
       use_spatial_attention=cfg.model.use_spatial_attention,
       downsample_ratio=cfg.model.downsample_ratio,
+      kernel_size=tuple(cfg.model.get("kernel_size", (3, 3, 3))),
   )
   input_shape = (cfg.batch_size, *gt.shape[1:])
 

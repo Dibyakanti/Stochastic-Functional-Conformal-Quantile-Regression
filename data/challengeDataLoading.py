@@ -22,8 +22,7 @@ def load_challenge_da_data(
     take `time_steps + 1` consecutive frames starting at `t_start`, flip x to
     increasing order and crop to `crop_shape` (keeping the low-x / low-y
     corner) so both spatial dims divide the U-Net downsampling factor. The
-    field is standardised per channel, so the pinball losses, intervals and
-    Q_p all live in units of the channel std.
+    fields are used raw (no normalisation), in the file's units.
 
     Returns:
         ground_truth:  (time_steps+1, X, Y, 1, 2)  — singleton z axis
@@ -46,11 +45,6 @@ def load_challenge_da_data(
 
     # (T, X, Y, C), x flipped to increasing order, then cropped.
     ground_truth = np.stack([ux, uy], axis=-1)[:, ::-1][:, :nx, :ny]
-
-    mean = ground_truth.mean(axis=(0, 1, 2))
-    std = ground_truth.std(axis=(0, 1, 2))
-    print(f"Per-channel mean {mean}, std {std} (data standardised with these)")
-    ground_truth = (ground_truth - mean) / std
 
     # Singleton z axis so the 3D U-Net / SFCQR code can be reused unchanged.
     ground_truth = np.ascontiguousarray(ground_truth[:, :, :, None, :])
@@ -83,7 +77,8 @@ def load_challenge2_2_da_data(
     The pipeline assumes one continuous trajectory, so a single `case` is
     used. We take `time_steps + 1` consecutive frames from `t_start`, centre-
     crop to `crop_shape` (keeping the airfoil centred) so both spatial dims
-    divide the U-Net downsampling factor, and standardise per channel. The
+    divide the U-Net downsampling factor. Fields are used raw (no
+    normalisation). The
     pitch angle (`alpha`, `alphadot`) and airfoil coordinates are not used.
 
     Returns:
@@ -110,11 +105,6 @@ def load_challenge2_2_da_data(
     x0 = (ground_truth.shape[1] - crop_shape[0]) // 2
     y0 = (ground_truth.shape[2] - crop_shape[1]) // 2
     ground_truth = ground_truth[:, x0 : x0 + crop_shape[0], y0 : y0 + crop_shape[1]]
-
-    mean = ground_truth.mean(axis=(0, 1, 2))
-    std = ground_truth.std(axis=(0, 1, 2))
-    print(f"Per-channel mean {mean}, std {std} (data standardised with these)")
-    ground_truth = (ground_truth - mean) / std
 
     # Singleton z axis so the 3D U-Net / SFCQR code can be reused unchanged.
     ground_truth = np.ascontiguousarray(ground_truth[:, :, :, None, :])

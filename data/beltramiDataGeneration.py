@@ -67,20 +67,24 @@ def generate_beltrami_da_data(
     a=1.0, 
     d=1.0, 
     noise_std=0.05,
-    seed=42
+    seed=42,
+    domain=1.0,
 ):
     """
     Generates a 4D dataset for Data Assimilation.
     Returns:
         ground_truth: The exact physics (time, X, Y, Z, 4)
-        observations: The ground truth + Gaussian noise (time, X, Y, Z, 4)
+        observations: The ground truth + Laplace noise (time, X, Y, Z, 4)
         coords: Dictionary of spatial coordinates
         times: Array of time points
+
+    domain:      the grid is [-domain, domain]^3 (default [-1, 1]^3).
+    noise_std:   Laplace scale; a scalar or one value per channel.
     """
-    # 1. Define Grid (Domain [-1, 1])
-    x = jnp.linspace(-1, 1, spatial_res)
-    y = jnp.linspace(-1, 1, spatial_res)
-    z = jnp.linspace(-1, 1, spatial_res)
+    # 1. Define Grid (Domain [-domain, domain])
+    x = jnp.linspace(-domain, domain, spatial_res)
+    y = jnp.linspace(-domain, domain, spatial_res)
+    z = jnp.linspace(-domain, domain, spatial_res)
     grid_x, grid_y, grid_z = jnp.meshgrid(x, y, z, indexing='ij')
 
     # 2. Define Time
@@ -93,11 +97,11 @@ def generate_beltrami_da_data(
     
     print(f"Generating Ground Truth for grid {spatial_res}x{spatial_res}x{spatial_res} over {time_steps} steps...")
     ground_truth = compute_trajectory(times, grid_x, grid_y, grid_z, a, d)
-    
+
     # 4. Generate Noisy Observations
     print("Adding observation noise...")
     key = jax.random.PRNGKey(seed)
-    noise = jax.random.laplace(key, shape=ground_truth.shape) * noise_std
+    noise = jax.random.laplace(key, shape=ground_truth.shape) * jnp.asarray(noise_std)
     observations = ground_truth + noise
 
     return ground_truth, observations, {"x": x, "y": y, "z": z}, times

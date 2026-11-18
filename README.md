@@ -113,9 +113,8 @@ and reused by every later batch, by calibration and by analysis, so the
 calibration set can never leak into training. Delete it only if you mean to
 start the experiment over.
 
-Observation noise is Laplace with scale `noise_std`. The Challenge data are
-standardised per channel, so intervals and `Q_p` are in units of the channel
-standard deviation.
+Observation noise is Laplace with scale `noise_std`. All fields are used raw
+(no normalisation), so intervals are in the data's own units.
 
 ---
 

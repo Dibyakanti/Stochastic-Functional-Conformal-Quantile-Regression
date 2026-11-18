@@ -101,6 +101,14 @@ def sfcqr_beltrami_adamw():
     })
     return config
 
+def sfcqr_beltrami_adamw_domain5():
+    """sfcqr_beltrami_adamw on [-5, 5]^3 instead of [-1, 1]^3; nothing else
+    changes (raw, unnormalised fields; noise_std = 2 as in the base run)."""
+    config = sfcqr_beltrami_adamw()
+    config.domain = 5.0
+    config.workdir = "./results/sfcqr_beltrami_adamw_domain5"
+    return config
+
 def sfcqr_beltrami_adamw_n100():
     # ~100 train / 100 cal / 100 test samples. dt=0.02 with 410 steps keeps
     # the same t in [0, 8] horizon as sfcqr_beltrami_adamw.
@@ -191,7 +199,9 @@ def sfcqr_smallnn_challenge_adamw():
     config.model = config_dict.ConfigDict({
         'num_channels': (16, 32),
         'use_spatial_attention': (False, False),
-        'downsample_ratio' : ((2, 2, 1),) * 2
+        'downsample_ratio' : ((2, 2, 1),) * 2,
+        # z is a singleton axis: (3, 3, 1) makes every conv an exact 2D conv
+        'kernel_size': (3, 3, 1),
     })
     return config
 
@@ -216,7 +226,9 @@ def sfcqr_challenge_adamw():
     config.model = config_dict.ConfigDict({
         'num_channels': (16, 32, 64),
         'use_spatial_attention': (False, False, True),
-        'downsample_ratio' : ((2, 2, 1),) * 3
+        'downsample_ratio' : ((2, 2, 1),) * 3,
+        # z is a singleton axis: (3, 3, 1) makes every conv an exact 2D conv
+        'kernel_size': (3, 3, 1),
     })
     return config
 

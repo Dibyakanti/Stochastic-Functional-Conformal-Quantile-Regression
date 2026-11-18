@@ -235,6 +235,7 @@ def main(_):
         a=1.0,
         d=1.0,
         noise_std=cfg.noise_std,
+        domain=cfg.get("domain", 1.0),
     )
   elif cfg.type == "ks3d":
     out_dim = 1
@@ -270,6 +271,7 @@ def main(_):
       num_channels=cfg.model.num_channels,
       use_spatial_attention=cfg.model.use_spatial_attention,
       downsample_ratio=cfg.model.downsample_ratio,
+      kernel_size=tuple(cfg.model.get("kernel_size", (3, 3, 3))),
   )
 
   # Each batch gets an independent RNG slice so its members are fresh draws,

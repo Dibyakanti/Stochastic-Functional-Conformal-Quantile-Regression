@@ -105,6 +105,7 @@ class UNet3d(nn.Module):
   noise_embed_dim: int = 128
   input_proj_channels: int = 128
   output_proj_channels: int = 128
+  kernel_size: tuple[int, int, int] = (3, 3, 3)  # (3, 3, 1) = 2D conv on a singleton z axis
   padding: str = "SAME"
   dropout_rate: float = 0.0
   use_spatial_attention: bool | Sequence[bool] = (False, False, False, True)
@@ -244,6 +245,7 @@ class UNet3d(nn.Module):
         num_res_blocks=len(self.num_channels) * (self.num_blocks,),
         downsample_ratio=self.downsample_ratio,
         num_input_proj_channels=self.input_proj_channels,
+        kernel_size=self.kernel_size,
         padding=self.padding,
         dropout_rate=self.dropout_rate,
         use_spatial_attention=use_spatial_attn,
@@ -262,6 +264,7 @@ class UNet3d(nn.Module):
         num_res_blocks=len(self.num_channels) * (self.num_blocks,),
         upsample_ratio=self.downsample_ratio[::-1],
         num_output_proj_channels=self.output_proj_channels,
+        kernel_size=self.kernel_size,
         padding=self.padding,
         dropout_rate=self.dropout_rate,
         use_spatial_attention=use_spatial_attn[::-1],
@@ -284,7 +287,7 @@ class UNet3d(nn.Module):
     )
     h = ConvLayer(
         features=self.out_channels,
-        kernel_size=(3, 3, 3),
+        kernel_size=tuple(self.kernel_size),
         padding=self.padding,
         kernel_init=default_init(),  # The kernel has mean almost zero.
         precision=self.precision,

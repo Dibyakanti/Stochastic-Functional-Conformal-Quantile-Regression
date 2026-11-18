@@ -50,6 +50,7 @@ class DStack(nn.Module):
   use_spatial_attention: Sequence[bool]
   # use_temporal_attention: Sequence[bool]
   num_input_proj_channels: int = 128
+  kernel_size: tuple[int, int, int] = (3, 3, 3)  # (3, 3, 1) = 2D conv on a singleton z axis
   padding: str = "LATLON"
   dropout_rate: float = 0.0
   use_position_encoding: bool = False
@@ -99,7 +100,7 @@ class DStack(nn.Module):
     # Spatial projection to tokens.
     h = ConvLayer(
         features=self.num_input_proj_channels,
-        kernel_size=(3, 3, 3),
+        kernel_size=tuple(self.kernel_size),
         padding=self.padding,
         kernel_init=default_init(1.0),
         dtype=self.dtype,
@@ -126,7 +127,7 @@ class DStack(nn.Module):
       for block_id in range(self.num_res_blocks[level]):
         h = ConvBlock(
             out_channels=channel,
-            kernel_size=(3, 3, 3),
+            kernel_size=tuple(self.kernel_size),
             padding=self.padding,
             dropout=self.dropout_rate,
             precision=self.precision,

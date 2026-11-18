@@ -9,6 +9,7 @@ def get_config(variant="baseline"):
         "sfcqr_smallnn_beltrami_adamw_trainlonger": presets.sfcqr_smallnn_beltrami_adamw_trainlonger(),
         "sfcqr_smallnn_beltrami_adamw": presets.sfcqr_smallnn_beltrami_adamw(),
         "sfcqr_beltrami_adamw": presets.sfcqr_beltrami_adamw(),
+        "sfcqr_beltrami_adamw_domain5": presets.sfcqr_beltrami_adamw_domain5(),
         "sfcqr_beltrami_adamw_n100": presets.sfcqr_beltrami_adamw_n100(),
         "sfcqr_smallnn_challenge_adamw": presets.sfcqr_smallnn_challenge_adamw(),
         "sfcqr_challenge_adamw": presets.sfcqr_challenge_adamw(),

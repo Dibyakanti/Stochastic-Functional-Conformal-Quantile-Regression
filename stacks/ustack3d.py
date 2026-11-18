@@ -52,6 +52,7 @@ class UStack(nn.Module):
   use_spatial_attention: Sequence[bool]
   # use_temporal_attention: Sequence[bool]
   num_output_proj_channels: int = 128
+  kernel_size: tuple[int, int, int] = (3, 3, 3)  # (3, 3, 1) = 2D conv on a singleton z axis
   padding: str = "CIRCULAR"
   dropout_rate: float = 0.0
   use_position_encoding: bool = False
@@ -117,7 +118,7 @@ class UStack(nn.Module):
         h = ConvBlock(
             out_channels=channel,
             # This will treat the time dimension as an extra batch dimension.
-            kernel_size=(3, 3, 3),
+            kernel_size=tuple(self.kernel_size),
             padding=self.padding,
             dropout=self.dropout_rate,
             precision=self.precision,
@@ -151,7 +152,7 @@ class UStack(nn.Module):
       up_ratio = as_3d_ratio(self.upsample_ratio[level])
       h = ConvLayer(
           features=int(np.prod(up_ratio)) * channel,
-          kernel_size=(3, 3, 3),
+          kernel_size=tuple(self.kernel_size),
           padding=self.padding,
           kernel_init=default_init(1.0),
           precision=self.precision,
@@ -170,7 +171,7 @@ class UStack(nn.Module):
     )(residual=h, skip=skips.pop())
     h = ConvLayer(
         features=self.num_output_proj_channels,
-        kernel_size=(3, 3, 3),
+        kernel_size=tuple(self.kernel_size),
         padding=self.padding,
         kernel_init=default_init(1.0),
         dtype=self.dtype,
