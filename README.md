@@ -1,10 +1,10 @@
 # SFCQR for neural PDE surrogate modelling
 
 Uncertainty quantification for neural surrogates of PDE dynamics, using
-**SFCQR** (split *functional* conformalised quantile regression) on top of
+**SFCQR** (stochastic *functional* conformalised quantile regression) on top of
 ensembles of quantile regressors. Two model families are supported:
 
-- **UNet3d / UViT** (a 3D U-Net with axial self-attention, adapted from
+- **UNet3d** (a 3D U-Net with axial self-attention, adapted from
   [`swirl_dynamics`](https://github.com/google-research/swirl-dynamics)),
   learning a one-step map from a noisy field to the field `t` later.
 - **DeepONet**
@@ -15,11 +15,11 @@ Problems:
 
 | `type` | Problem | Source | Grid | Channels |
 |---|---|---|---|---|
-| `beltrami` | 3D Beltrami flow (exact Navier–Stokes solution) | analytic, [data/beltramiDataGeneration.py](data/beltramiDataGeneration.py) | `res³` on `[-1,1]³` | u, v, w, p |
-| `ks3d` | 3D Kuramoto–Sivashinsky | simulated with [APEBench](https://github.com/tum-pbs/apebench), [data/ks3dDataGeneration.py](data/ks3dDataGeneration.py) | `res³`, periodic | u |
+| `beltrami` | 3D Beltrami flow (exact Navier–Stokes solution) | analytic, [data/beltramiDataGeneration.py](data/beltramiDataGeneration.py) | $32^3$ on $[-1,1]^3$ | u, v, w, p |
 | `challenge2_1` | 2D flow, Challenge 2.1 | HDF5 files in `./dataset`, [data/challengeDataLoading.py](data/challengeDataLoading.py) | 152 × 48 × 1 | ux, uy |
+| `burgers` | d-dimensional viscous Burgers (DeepONet only) | analytic, [data/burgersDataGeneration.py](data/burgersDataGeneration.py) | random points in $[-5,5]^d × [0,10]$ | u |
+<!-- | `ks3d` | 3D Kuramoto–Sivashinsky | simulated with [APEBench](https://github.com/tum-pbs/apebench), [data/ks3dDataGeneration.py](data/ks3dDataGeneration.py) | `res³`, periodic | u | -->
 <!-- | `challenge2_2` | 2D pitching airfoil, Challenge 2.2 (one `case`) | HDF5 files in `./dataset` | 56 × 56 × 1 | ux, uy | -->
-| `burgers` | d-dimensional viscous Burgers (DeepONet only) | analytic, [data/burgersDataGeneration.py](data/burgersDataGeneration.py) | random points in `[-5,5]^d × [0,10]` | u |
 
 ---
 
@@ -67,30 +67,27 @@ True `ux`/`uy`, calibrated bounds and covered points over the test snapshots, pr
 
 ## Method
 
-For each miscoverage level `α` in `config.alpha_list`:
+For each miscoverage level $\alpha$ in `config.alpha_list`:
 
 1. **Train a pool of quantile regressors.** Two groups of networks are trained
-   with the pinball loss, one at `τ_lo = α/2` and one at `τ_hi = 1 − α/2`.
+   with the pinball loss, one at $\alpha_{lo} = \alpha/2$ and one at $\alpha_{lo} = 1 - \alpha/2$.
    Members are trained in *batches* (`--batch_n_ens` members at once, vmapped
    in a single train state); running the training script with
-   `--batch_idx = 0, 1, …` grows the pool without retraining earlier batches.
+   `--batch_idx = 0, 1, ...` grows the pool without retraining earlier batches.
 2. **Calibrate** on held-out functions (time snapshots for the field problems,
    viscosities for Burgers). For each sub-ensemble size `s` and each of
    `n_repeats` draws, pick `s` random lo members and `s` random hi members from
    the pool and compute
-   - consensus bounds `q̄_lo`, `q̄_hi` = member means,
-   - local scale `σ = max(q̄_hi − q̄_lo, 0) + δ` ; `δ` is a tiny floor (`1e-6 × std` of the training targets),
-   - normalised residual at each grid point
-     `r = max(q̄_lo − y, y − q̄_hi) / σ`,
-   - per-function score `S_i` = the `⌈(1−α)m⌉`-th smallest residual over the
+   - consensus bounds $\tilde{q}_{lo}$, $\tilde{q}_{hi}$ = member means,
+   - local scale $\sigma = \max(\tilde{q}_{hi} - \tilde{q}_{lo},0) + \delta$ ; $\delta$ is a tiny floor (`1e-6 × std` of the training targets),
+   - normalised residual at each grid point $r = \max(\tilde{q}_{hi} - y, y - \tilde{q}_{lo}) / \sigma$,
+   - per-function score $S_i$ = the $\lceil (1-\alpha)m \rceil$-th smallest residual over the
      `m` points of function `i` (per channel),
-   - threshold `Q_p` = the `⌈(n_cal+1)(1−β)⌉`-th smallest `S_i`.
-3. **Evaluate** on test functions with the band
-   `[q̄_lo − Q_p·σ, q̄_hi + Q_p·σ]`, replaying *exactly* the member subset that
-   produced each `Q_p`. Two metrics are reported per channel:
-   - **pointwise coverage** (target `1 − α`) and mean interval width,
+   - threshold $Q_p$ = the $\lceil (n_{cal} + 1)(1-\beta) \rceil$-th smallest $S_i$.
+3. **Evaluate** on test functions with the band $[\tilde{q}_{lo} - Q_p \cdot \sigma, \tilde{q}_{hi} + Q_p \cdot \sigma]$, replaying *exactly* the member subset that produced each $Q_p$. Two metrics are reported per channel:
+   - **pointwise coverage** (target $1 − α$) and mean interval width,
    - **functional coverage**: fraction of test functions with at least
-     `⌈(1−α)m⌉` of their points covered (target `1 − β`).
+     $\lceil(1−\alpha)m\rceil$ of their points covered (target $1 − \beta$).
 
 Because every ensemble size gets `n_repeats` draws, the plots show mean
 coverage / width versus ensemble size `s` with error bands.
