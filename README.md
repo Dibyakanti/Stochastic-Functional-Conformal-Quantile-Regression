@@ -16,7 +16,7 @@ Problems:
 | `type` | Problem | Source | Grid | Channels |
 |---|---|---|---|---|
 | `beltrami` | 3D Beltrami flow (exact Navier–Stokes solution) | analytic, [data/beltramiDataGeneration.py](data/beltramiDataGeneration.py) | $32^3$ on $[-1,1]^3$ | u, v, w, p |
-| `challenge2_1` | 2D flow, Challenge 2.1 | HDF5 files in `./dataset`, [data/challengeDataLoading.py](data/challengeDataLoading.py) | 152 × 48 × 1 | ux, uy |
+| `challenge2_1` | 2D flow, Challenge 2.1 of the [UMich fluids challenge](https://fluids-challenge.engin.umich.edu) | HDF5 files in `./dataset`, [data/challengeDataLoading.py](data/challengeDataLoading.py) | 152 × 48 × 1 | ux, uy |
 | `burgers` | d-dimensional viscous Burgers (DeepONet only) | analytic, [data/burgersDataGeneration.py](data/burgersDataGeneration.py) | random points in $[-5,5]^d × [0,10]$ | u |
 <!-- | `ks3d` | 3D Kuramoto–Sivashinsky | simulated with [APEBench](https://github.com/tum-pbs/apebench), [data/ks3dDataGeneration.py](data/ks3dDataGeneration.py) | `res³`, periodic | u | -->
 <!-- | `challenge2_2` | 2D pitching airfoil, Challenge 2.2 (one `case`) | HDF5 files in `./dataset` | 56 × 56 × 1 | ux, uy | -->
@@ -59,7 +59,7 @@ True field, lower and upper bounds and interval width for one channel over the t
   <img src="assets/animations/challenge2_1_uvit.webp" alt="SFCQR prediction band of the UViT on Challenge 2.1" width="900">
 </p>
 
-True `ux`/`uy`, calibrated bounds and covered points over the test snapshots, preset `sfcqr_challenge_adamw`.
+True `ux`/`uy`, calibrated bounds and covered points over the test snapshots, preset `sfcqr_challenge_adamw`. Data: Challenge 2.1 of the [UMich fluids challenge](https://fluids-challenge.engin.umich.edu).
 
 <!-- *TODO: caption. For example: true `ux`/`uy`, calibrated bounds and covered points over the test snapshots, preset `sfcqr_challenge_adamw`.* -->
 
@@ -173,7 +173,9 @@ The environment is the NVIDIA JAX container plus a few packages (see the
   singularity pull singularity/jax-csf3_latest.sif docker://dibyakanti/jax-csf3:latest
   ```
 
-The Challenge problems also need the HDF5 files in `./dataset/` (gitignored):
+The Challenge problems also need the HDF5 files from the
+[UMich fluids challenge](https://fluids-challenge.engin.umich.edu), placed in
+`./dataset/` (gitignored):
 `Challenge2_1_train.h5`, `Challenge2_1_parameters.h5`,
 `Challenge2_2_train.h5`, `Challenge2_2_parameters.h5`.
 
