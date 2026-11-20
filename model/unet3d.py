@@ -269,6 +269,7 @@ class UNet3d(nn.Module):
         dropout_rate=self.dropout_rate,
         use_spatial_attention=use_spatial_attn[::-1],
         # use_temporal_attention=use_temporal_attn[::-1],
+        use_position_encoding=self.use_position_encoding,
         num_heads=self.num_heads,
         ffn_type=self.ffn_type,
         precision=self.precision,
