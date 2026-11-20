@@ -239,7 +239,7 @@ def run_analysis(cfg):
 
           all_preds_lo.append(p_lo)
           all_preds_hi.append(p_hi)
-          actual_truth.append(gt[start_idx + (2 * i) + 2])
+          actual_truth.append(obs[start_idx + (2 * i) + 2])
 
         preds_lo = jnp.concatenate(all_preds_lo, axis=0)
         preds_hi = jnp.concatenate(all_preds_hi, axis=0)

@@ -312,7 +312,7 @@ def main(_):
   n_channels = y_train_true.shape[-1]
   delta = 1e-6 * jnp.std(y_train_true.reshape(-1, n_channels), axis=0)
   delta = delta.reshape(1, 1, 1, 1, n_channels)
-  y_true = gt[cal_idx + 2]
+  y_true = obs[cal_idx + 2]
 
   unet = UNet3d(
       out_channels=out_dim,
